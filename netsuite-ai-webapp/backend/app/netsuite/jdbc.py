@@ -45,8 +45,11 @@ def _get_password(db: Session, conn: NetSuiteJdbcConnection) -> str:
 def _build_jdbc_url(conn: NetSuiteJdbcConnection) -> str:
     return (
         f"jdbc:ns://{conn.host}:{conn.port};"
-        f"accountId={conn.account_id};"
-        f"roleId={conn.role_id}"
+        f"ServerDataSource=NetSuite2.com;"
+        f"Encrypted=1;"
+        f"NegotiateSSLClose=false;"
+        f"AccountId={conn.account_id};"
+        f"RoleId={conn.role_id}"
     )
 
 
