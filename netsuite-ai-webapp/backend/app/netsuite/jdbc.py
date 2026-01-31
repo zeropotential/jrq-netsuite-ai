@@ -116,3 +116,6 @@ def run_query(db: Session, connection_id: str, sql: str, limit: int | None = Non
         raise
     except Exception as exc:
         raise JdbcError(f"JDBC query failed: {exc}") from exc
+- DEPARTMENT: ID, NAME, ISINACTIVE, PARENT
+- LOCATION: ID, NAME, ISINACTIVE, PARENT
+"""

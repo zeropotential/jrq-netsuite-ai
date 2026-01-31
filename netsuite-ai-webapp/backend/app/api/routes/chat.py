@@ -52,8 +52,15 @@ def chat(
     sql = sql.rstrip(';').strip()
 
     lowered = sql.lower()
-    if " fetch first " not in lowered and " limit " not in lowered and " rows only" not in lowered:
-        sql = f"{sql} FETCH FIRST {settings.netsuite_jdbc_row_limit} ROWS ONLY"
+    # Only add ROWNUM limit if no limit clause and not an aggregate-only query
+    has_limit = "rownum" in lowered or " limit " in lowered or " fetch first " in lowered
+    is_aggregate_only = (
+        ("count(" in lowered or "sum(" in lowered or "avg(" in lowered or "max(" in lowered or "min(" in lowered)
+        and "group by" not in lowered
+    )
+    if not has_limit and not is_aggregate_only:
+        # Wrap query with ROWNUM for SQL-92 compatibility
+        sql = f"SELECT * FROM ({sql}) WHERE ROWNUM <= {settings.netsuite_jdbc_row_limit}"
 
     try:
         result = run_query(db, payload.connection_id, sql, settings.netsuite_jdbc_row_limit)

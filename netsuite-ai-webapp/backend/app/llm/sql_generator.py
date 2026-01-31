@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from openai import OpenAI
 
 from app.core.config import settings
+from app.llm.netsuite_schema import NETSUITE_SCHEMA
 
 
 class LlmError(RuntimeError):
@@ -28,7 +29,7 @@ def generate_oracle_sql(
     *,
     prompt: str,
     schema_hint: str | None = None,
-    max_tokens: int = 400,
+    max_tokens: int = 800,
     api_key: str | None = None,
 ) -> SqlGenerationResult:
     if settings.llm_provider.lower() != "openai":
@@ -37,19 +38,29 @@ def generate_oracle_sql(
     client = _require_openai_client(api_key)
 
     system = (
-        "You are a SQL generator for Oracle SQL used by NetSuite SuiteAnalytics Connect. "
-        "Return ONLY a single SQL SELECT statement. "
+        "You are a SQL-92 compliant SQL generator for NetSuite SuiteAnalytics Connect (ODBC/JDBC). "
+        "Return ONLY a single SQL SELECT statement with NO semicolon at the end. "
         "Never return explanations, markdown, or code fences. "
-        "Use ONLY SELECT or WITH statements."
+        "Use ONLY SELECT statements (WITH/CTE is allowed). "
+        "\n\nCRITICAL SQL-92 RULES:\n"
+        "- Use standard SQL-92 syntax only\n"
+        "- Use INNER JOIN, LEFT JOIN, RIGHT JOIN (not implicit joins)\n"
+        "- For row limits: wrap query as SELECT * FROM (subquery) WHERE ROWNUM <= N\n"
+        "- String literals use single quotes: 'value'\n"
+        "- Use IS NULL / IS NOT NULL for null checks\n"
+        "- Date format: TO_DATE('2024-01-01', 'YYYY-MM-DD')\n"
+        "- Boolean fields: 'T' = true, 'F' = false\n"
+        "- NO semicolons, NO FETCH FIRST, NO LIMIT clause\n"
+        "- For aggregations (COUNT, SUM, AVG, MIN, MAX) without GROUP BY, do NOT add ROWNUM\n"
     )
 
-    schema = f"Schema hint: {schema_hint}" if schema_hint else "No schema hint provided."
+    # Use the full schema from the Excel file, or fall back to provided hint
+    schema = schema_hint if schema_hint else NETSUITE_SCHEMA
 
     user = (
-        f"{schema}\n"
-        "Task: Translate the user request into Oracle SQL."
-        f"\nUser request: {prompt}\n"
-        "Constraints: SELECT-only; avoid DML/DDL; limit results with FETCH FIRST 50 ROWS ONLY if no limit."
+        f"{schema}\n\n"
+        f"User request: {prompt}\n\n"
+        "Generate a SQL-92 compliant SELECT statement for NetSuite. No semicolon at the end."
     )
 
     response = client.chat.completions.create(
