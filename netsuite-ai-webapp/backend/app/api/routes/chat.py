@@ -55,9 +55,9 @@ def chat(
     try:
         result = run_query(db, payload.connection_id, sql, settings.netsuite_jdbc_row_limit)
     except JdbcError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=f"{exc} | SQL: {sql}") from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail="JDBC query failed") from exc
+        raise HTTPException(status_code=500, detail=f"JDBC query failed | SQL: {sql}") from exc
 
     columns = result.get("columns", [])
     rows = result.get("rows", [])
