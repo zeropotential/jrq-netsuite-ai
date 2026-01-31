@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -23,7 +23,11 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=ChatResponse)
-def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
+def chat(
+    payload: ChatRequest,
+    db: Session = Depends(get_db),
+    openai_api_key: str | None = Header(default=None, alias="X-OpenAI-Api-Key"),
+) -> ChatResponse:
     if not payload.connection_id:
         raise HTTPException(status_code=400, detail="connection_id is required")
 
@@ -35,7 +39,7 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     normalized = sql.lower().lstrip()
     if not (normalized.startswith("select") or normalized.startswith("with")):
         try:
-            result = generate_oracle_sql(prompt=prompt, schema_hint=payload.scope)
+            result = generate_oracle_sql(prompt=prompt, schema_hint=payload.scope, api_key=openai_api_key)
         except LlmError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         sql = result.sql

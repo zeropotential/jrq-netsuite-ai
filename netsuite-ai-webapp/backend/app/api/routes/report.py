@@ -4,7 +4,7 @@ import csv
 import io
 from typing import Iterable
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from reportlab.lib.pagesizes import letter
@@ -46,13 +46,21 @@ def _ensure_limit(sql: str) -> str:
     return f"{sql.rstrip(';')} FETCH FIRST {settings.netsuite_jdbc_row_limit} ROWS ONLY"
 
 
-def _run_report(db: Session, payload: ReportRequest) -> tuple[str, list[str], list[list[str]]]:
+def _run_report(
+    db: Session,
+    payload: ReportRequest,
+    openai_api_key: str | None,
+) -> tuple[str, list[str], list[list[str]]]:
     sql = payload.sql
     if not sql:
         if not payload.prompt:
             raise HTTPException(status_code=400, detail="prompt or sql is required")
         try:
-            result = generate_oracle_sql(prompt=payload.prompt, schema_hint=payload.schema_hint)
+            result = generate_oracle_sql(
+                prompt=payload.prompt,
+                schema_hint=payload.schema_hint,
+                api_key=openai_api_key,
+            )
         except LlmError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         sql = result.sql
@@ -73,14 +81,22 @@ def _run_report(db: Session, payload: ReportRequest) -> tuple[str, list[str], li
 
 
 @router.post("/run", response_model=ReportResponse)
-def run_report(payload: ReportRequest, db: Session = Depends(get_db)) -> ReportResponse:
-    sql, columns, rows = _run_report(db, payload)
+def run_report(
+    payload: ReportRequest,
+    db: Session = Depends(get_db),
+    openai_api_key: str | None = Header(default=None, alias="X-OpenAI-Api-Key"),
+) -> ReportResponse:
+    sql, columns, rows = _run_report(db, payload, openai_api_key)
     return ReportResponse(sql=sql, columns=columns, rows=rows)
 
 
 @router.post("/export/csv")
-def export_csv(payload: ReportRequest, db: Session = Depends(get_db)) -> StreamingResponse:
-    sql, columns, rows = _run_report(db, payload)
+def export_csv(
+    payload: ReportRequest,
+    db: Session = Depends(get_db),
+    openai_api_key: str | None = Header(default=None, alias="X-OpenAI-Api-Key"),
+) -> StreamingResponse:
+    sql, columns, rows = _run_report(db, payload, openai_api_key)
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -97,10 +113,14 @@ def export_csv(payload: ReportRequest, db: Session = Depends(get_db)) -> Streami
 
 
 @router.post("/export/xlsx")
-def export_xlsx(payload: ReportRequest, db: Session = Depends(get_db)) -> Response:
+def export_xlsx(
+    payload: ReportRequest,
+    db: Session = Depends(get_db),
+    openai_api_key: str | None = Header(default=None, alias="X-OpenAI-Api-Key"),
+) -> Response:
     from openpyxl import Workbook
 
-    sql, columns, rows = _run_report(db, payload)
+    sql, columns, rows = _run_report(db, payload, openai_api_key)
 
     wb = Workbook()
     ws = wb.active
@@ -123,8 +143,12 @@ def export_xlsx(payload: ReportRequest, db: Session = Depends(get_db)) -> Respon
 
 
 @router.post("/export/pdf")
-def export_pdf(payload: ReportRequest, db: Session = Depends(get_db)) -> Response:
-    sql, columns, rows = _run_report(db, payload)
+def export_pdf(
+    payload: ReportRequest,
+    db: Session = Depends(get_db),
+    openai_api_key: str | None = Header(default=None, alias="X-OpenAI-Api-Key"),
+) -> Response:
+    sql, columns, rows = _run_report(db, payload, openai_api_key)
 
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=letter)

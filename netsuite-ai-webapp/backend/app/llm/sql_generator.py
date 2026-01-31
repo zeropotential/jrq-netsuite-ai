@@ -17,10 +17,11 @@ class SqlGenerationResult:
     model: str
 
 
-def _require_openai_client() -> OpenAI:
-    if not settings.openai_api_key:
+def _require_openai_client(api_key: str | None) -> OpenAI:
+    key = api_key or settings.openai_api_key
+    if not key:
         raise LlmError("OPENAI_API_KEY is not configured")
-    return OpenAI(api_key=settings.openai_api_key)
+    return OpenAI(api_key=key)
 
 
 def generate_oracle_sql(
@@ -28,11 +29,12 @@ def generate_oracle_sql(
     prompt: str,
     schema_hint: str | None = None,
     max_tokens: int = 400,
+    api_key: str | None = None,
 ) -> SqlGenerationResult:
     if settings.llm_provider.lower() != "openai":
         raise LlmError("Unsupported LLM provider")
 
-    client = _require_openai_client()
+    client = _require_openai_client(api_key)
 
     system = (
         "You are a SQL generator for Oracle SQL used by NetSuite SuiteAnalytics Connect. "
