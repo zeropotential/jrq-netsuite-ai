@@ -48,9 +48,12 @@ def chat(
     if not (normalized.startswith("select") or normalized.startswith("with")):
         raise HTTPException(status_code=400, detail="LLM produced non-SELECT SQL")
 
+    # Always strip trailing semicolon (not valid for NetSuite JDBC)
+    sql = sql.rstrip(';').strip()
+
     lowered = sql.lower()
     if " fetch first " not in lowered and " limit " not in lowered and " rows only" not in lowered:
-        sql = f"{sql.rstrip(';')} FETCH FIRST {settings.netsuite_jdbc_row_limit} ROWS ONLY"
+        sql = f"{sql} FETCH FIRST {settings.netsuite_jdbc_row_limit} ROWS ONLY"
 
     try:
         result = run_query(db, payload.connection_id, sql, settings.netsuite_jdbc_row_limit)
