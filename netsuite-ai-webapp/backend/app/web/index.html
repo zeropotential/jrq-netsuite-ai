@@ -261,8 +261,15 @@
             chatHistory = chatHistory.slice(-20);
           }
           
-          const sqlNote = data.sql ? `SQL: ${data.sql}` : "";
-          addMessage("Assistant", data.answer, data.source ? `Source: ${data.source}` : sqlNote);
+          // Build source info - show both source and SQL if available
+          let sourceInfo = "";
+          if (data.source) {
+            sourceInfo = `Source: ${data.source}`;
+          }
+          if (data.sql) {
+            sourceInfo += (sourceInfo ? "<br>" : "") + `<details><summary>View SQL</summary><pre style="background:#1e293b;padding:8px;border-radius:4px;overflow-x:auto;margin-top:4px;">${data.sql}</pre></details>`;
+          }
+          addMessage("Assistant", data.answer, sourceInfo);
           statusEl.textContent = "";
           document.getElementById("message").value = "";
         } catch (err) {
