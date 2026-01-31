@@ -49,7 +49,7 @@ def chat(
         raise HTTPException(status_code=400, detail="LLM produced non-SELECT SQL")
 
     lowered = sql.lower()
-    if " fetch first " not in lowered and " limit " not in lowered:
+    if " fetch first " not in lowered and " limit " not in lowered and " rows only" not in lowered:
         sql = f"{sql.rstrip(';')} FETCH FIRST {settings.netsuite_jdbc_row_limit} ROWS ONLY"
 
     try:
