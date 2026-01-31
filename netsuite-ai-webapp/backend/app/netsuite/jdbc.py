@@ -53,45 +53,55 @@ def _build_jdbc_url(conn: NetSuiteJdbcConnection) -> str:
 def _connect(conn: NetSuiteJdbcConnection, password: str):
     if not settings.netsuite_jdbc_jar:
         raise JdbcError("NETSUITE_JDBC_JAR is not configured")
-
-    return jaydebeapi.connect(
-        settings.netsuite_jdbc_driver,
-        _build_jdbc_url(conn),
-        [conn.username, password],
-        jars=[settings.netsuite_jdbc_jar],
-    )
+    try:
+        return jaydebeapi.connect(
+            settings.netsuite_jdbc_driver,
+            _build_jdbc_url(conn),
+            [conn.username, password],
+            jars=[settings.netsuite_jdbc_jar],
+        )
+    except Exception as exc:
+        raise JdbcError(f"JDBC connection failed: {exc}") from exc
 
 
 def test_connection(db: Session, connection_id: str) -> dict[str, Any]:
     conn = _get_connection(db, connection_id)
     password = _get_password(db, conn)
-
-    jdbc_conn = _connect(conn, password)
     try:
-        cursor = jdbc_conn.cursor()
+        jdbc_conn = _connect(conn, password)
         try:
-            cursor.execute("SELECT 1")
-            value = cursor.fetchone()
-            return {"status": "ok", "result": value[0] if value else None}
+            cursor = jdbc_conn.cursor()
+            try:
+                cursor.execute("SELECT 1")
+                value = cursor.fetchone()
+                return {"status": "ok", "result": value[0] if value else None}
+            finally:
+                cursor.close()
         finally:
-            cursor.close()
-    finally:
-        jdbc_conn.close()
+            jdbc_conn.close()
+    except JdbcError:
+        raise
+    except Exception as exc:
+        raise JdbcError(f"JDBC test failed: {exc}") from exc
 
 
 def run_query(db: Session, connection_id: str, sql: str, limit: int | None = None) -> dict[str, Any]:
     conn = _get_connection(db, connection_id)
     password = _get_password(db, conn)
-
-    jdbc_conn = _connect(conn, password)
     try:
-        cursor = jdbc_conn.cursor()
+        jdbc_conn = _connect(conn, password)
         try:
-            cursor.execute(sql)
-            rows = cursor.fetchmany(limit or settings.netsuite_jdbc_row_limit)
-            columns = [col[0] for col in (cursor.description or [])]
-            return {"columns": columns, "rows": rows}
+            cursor = jdbc_conn.cursor()
+            try:
+                cursor.execute(sql)
+                rows = cursor.fetchmany(limit or settings.netsuite_jdbc_row_limit)
+                columns = [col[0] for col in (cursor.description or [])]
+                return {"columns": columns, "rows": rows}
+            finally:
+                cursor.close()
         finally:
-            cursor.close()
-    finally:
-        jdbc_conn.close()
+            jdbc_conn.close()
+    except JdbcError:
+        raise
+    except Exception as exc:
+        raise JdbcError(f"JDBC query failed: {exc}") from exc
