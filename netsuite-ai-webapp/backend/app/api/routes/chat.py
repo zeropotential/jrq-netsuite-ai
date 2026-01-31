@@ -11,10 +11,16 @@ from app.netsuite.jdbc import JdbcError, run_query
 router = APIRouter(prefix="/api", tags=["chat"])
 
 
+class ChatMessage(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     connection_id: str | None = None
     scope: str | None = None
+    history: list[ChatMessage] = Field(default_factory=list, max_length=20)
 
 
 class ChatResponse(BaseModel):
@@ -67,49 +73,63 @@ def _classify_intent(client: OpenAI, message: str) -> str:
     return intent
 
 
-def _answer_general_question(client: OpenAI, message: str) -> str:
+def _answer_general_question(client: OpenAI, message: str, history: list[ChatMessage] | None = None) -> str:
     """Answer general questions about the AI itself."""
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                f"You are a NetSuite AI Assistant powered by OpenAI's {settings.openai_model} model. "
+                "You help users with NetSuite questions, data queries, and functional consulting. "
+                "When asked about yourself, be helpful and informative. "
+                "You can query NetSuite data via JDBC when users ask for data. "
+                "You remember the conversation history within this session."
+            )
+        }
+    ]
+    # Add conversation history
+    if history:
+        for msg in history[-10:]:  # Last 10 messages for context
+            messages.append({"role": msg.role, "content": msg.content})
+    messages.append({"role": "user", "content": message})
+    
     response = client.chat.completions.create(
         model=settings.openai_model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    f"You are a NetSuite AI Assistant powered by OpenAI's {settings.openai_model} model. "
-                    "You help users with NetSuite questions, data queries, and functional consulting. "
-                    "When asked about yourself, be helpful and informative. "
-                    "You can query NetSuite data via JDBC when users ask for data."
-                )
-            },
-            {"role": "user", "content": message}
-        ],
+        messages=messages,
         temperature=0.7,
         max_tokens=500,
     )
     return (response.choices[0].message.content or "").strip()
 
 
-def _answer_netsuite_help(client: OpenAI, message: str) -> str:
+def _answer_netsuite_help(client: OpenAI, message: str, history: list[ChatMessage] | None = None) -> str:
     """Answer NetSuite functional/accounting questions like a consultant."""
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an expert NetSuite Functional Consultant and Certified Accountant. "
+                "You have deep knowledge of:\n"
+                "- NetSuite ERP modules: Financials, CRM, Inventory, Order Management, Projects\n"
+                "- Accounting principles: GAAP, revenue recognition, deferred revenue, accruals\n"
+                "- NetSuite best practices: workflows, saved searches, custom records, SuiteScript\n"
+                "- Business processes: Order-to-Cash, Procure-to-Pay, Record-to-Report\n"
+                "- Multi-subsidiary, multi-currency, and intercompany transactions\n\n"
+                "Provide clear, practical advice. Use examples when helpful. "
+                "If the user needs data, suggest they ask a data question. "
+                "You remember the conversation history within this session."
+            )
+        }
+    ]
+    # Add conversation history
+    if history:
+        for msg in history[-10:]:  # Last 10 messages for context
+            messages.append({"role": msg.role, "content": msg.content})
+    messages.append({"role": "user", "content": message})
+    
     response = client.chat.completions.create(
         model=settings.openai_model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are an expert NetSuite Functional Consultant and Certified Accountant. "
-                    "You have deep knowledge of:\n"
-                    "- NetSuite ERP modules: Financials, CRM, Inventory, Order Management, Projects\n"
-                    "- Accounting principles: GAAP, revenue recognition, deferred revenue, accruals\n"
-                    "- NetSuite best practices: workflows, saved searches, custom records, SuiteScript\n"
-                    "- Business processes: Order-to-Cash, Procure-to-Pay, Record-to-Report\n"
-                    "- Multi-subsidiary, multi-currency, and intercompany transactions\n\n"
-                    "Provide clear, practical advice. Use examples when helpful. "
-                    "If the user needs data, suggest they ask a data question."
-                )
-            },
-            {"role": "user", "content": message}
-        ],
+        messages=messages,
         temperature=0.7,
         max_tokens=1000,
     )
@@ -142,12 +162,12 @@ def chat(
         
         # Handle general questions (about the AI, model, etc.)
         if intent == "general_question":
-            answer = _answer_general_question(client, prompt)
+            answer = _answer_general_question(client, prompt, payload.history)
             return ChatResponse(answer=answer, source="assistant", sql=None)
         
         # Handle NetSuite help/consulting questions
         if intent == "netsuite_help":
-            answer = _answer_netsuite_help(client, prompt)
+            answer = _answer_netsuite_help(client, prompt, payload.history)
             return ChatResponse(answer=answer, source="consultant", sql=None)
 
     # For data queries, require connection_id

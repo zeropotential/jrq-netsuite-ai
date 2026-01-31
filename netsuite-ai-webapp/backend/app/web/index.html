@@ -141,6 +141,7 @@
         </label>
         <div style="margin-top: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
           <button id="sendBtn">Send to Chat</button>
+          <button id="clearChatBtn" style="background: #64748b;">Clear Chat</button>
           <button id="runReportBtn">Run Report</button>
           <button id="exportCsvBtn">Export CSV</button>
           <button id="exportXlsxBtn">Export Excel</button>
@@ -166,6 +167,18 @@
       const exportXlsxBtn = document.getElementById("exportXlsxBtn");
       const exportPdfBtn = document.getElementById("exportPdfBtn");
       const openaiKeyEl = document.getElementById("openaiKey");
+      const clearChatBtn = document.getElementById("clearChatBtn");
+
+      // Session-based chat history (clears on page refresh)
+      let chatHistory = [];
+
+      // Clear chat button handler
+      clearChatBtn.addEventListener("click", () => {
+        chatHistory = [];
+        chatEl.innerHTML = "";
+        statusEl.textContent = "Chat cleared. Memory reset.";
+        setTimeout(() => { statusEl.textContent = ""; }, 2000);
+      });
 
       const addMessage = (label, text, source) => {
         const div = document.createElement("div");
@@ -220,15 +233,26 @@
               message: payload.prompt,
               connection_id: payload.connection_id,
               scope: payload.schema_hint,
+              history: chatHistory,
             }),
           });
           const data = await response.json();
           if (!response.ok) {
             throw new Error(data.detail || "Request failed");
           }
+          
+          // Add to chat history for session memory
+          chatHistory.push({ role: "user", content: payload.prompt });
+          chatHistory.push({ role: "assistant", content: data.answer });
+          // Keep only last 20 messages to avoid token limits
+          if (chatHistory.length > 20) {
+            chatHistory = chatHistory.slice(-20);
+          }
+          
           const sqlNote = data.sql ? `SQL: ${data.sql}` : "";
           addMessage("Assistant", data.answer, data.source ? `Source: ${data.source}` : sqlNote);
           statusEl.textContent = "";
+          document.getElementById("message").value = "";
         } catch (err) {
           statusEl.textContent = err.message;
         } finally {
