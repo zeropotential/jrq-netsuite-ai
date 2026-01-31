@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from openai import OpenAI
 
 from app.core.config import settings
 from app.llm.netsuite_schema import NETSUITE_SCHEMA
+
+logger = logging.getLogger(__name__)
 
 
 class LlmError(RuntimeError):
@@ -25,11 +28,21 @@ def _require_openai_client(api_key: str | None) -> OpenAI:
     return OpenAI(api_key=key)
 
 
+def _get_completion_kwargs(max_tokens: int) -> dict:
+    """Return the appropriate token limit parameter based on model."""
+    model = settings.openai_model.lower()
+    # GPT-5 series uses max_completion_tokens
+    if "gpt-5" in model or "o1" in model or "o3" in model:
+        return {"max_completion_tokens": max_tokens}
+    # Older models use max_tokens
+    return {"max_tokens": max_tokens}
+
+
 def generate_oracle_sql(
     *,
     prompt: str,
     schema_hint: str | None = None,
-    max_completion_tokens: int = 800,
+    max_tokens: int = 800,
     api_key: str | None = None,
 ) -> SqlGenerationResult:
     if settings.llm_provider.lower() != "openai":
@@ -70,7 +83,7 @@ def generate_oracle_sql(
             {"role": "user", "content": user},
         ],
         temperature=0.1,
-        max_completion_tokens=max_completion_tokens,
+        **_get_completion_kwargs(max_tokens),
     )
 
     content = (response.choices[0].message.content or "").strip()

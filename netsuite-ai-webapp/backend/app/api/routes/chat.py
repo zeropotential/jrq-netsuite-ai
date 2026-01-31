@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.llm.sql_generator import LlmError, generate_oracle_sql
+from app.llm.sql_generator import LlmError, generate_oracle_sql, _get_completion_kwargs
 from app.netsuite.jdbc import JdbcError, run_query
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -64,7 +64,7 @@ def _classify_intent(client: OpenAI, message: str) -> str:
             {"role": "user", "content": message}
         ],
         temperature=0,
-        max_completion_tokens=10,
+        **_get_completion_kwargs(10),
     )
     intent = (response.choices[0].message.content or "").strip().lower()
     if intent not in ("data_query", "general_question", "netsuite_help"):
@@ -97,7 +97,7 @@ def _answer_general_question(client: OpenAI, message: str, history: list[ChatMes
         model=settings.openai_model,
         messages=messages,
         temperature=0.7,
-        max_completion_tokens=500,
+        **_get_completion_kwargs(500),
     )
     return (response.choices[0].message.content or "").strip()
 
@@ -131,7 +131,7 @@ def _answer_netsuite_help(client: OpenAI, message: str, history: list[ChatMessag
         model=settings.openai_model,
         messages=messages,
         temperature=0.7,
-        max_completion_tokens=1000,
+        **_get_completion_kwargs(1000),
     )
     return (response.choices[0].message.content or "").strip()
 
