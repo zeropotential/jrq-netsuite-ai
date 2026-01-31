@@ -13,7 +13,8 @@ class Settings(BaseSettings):
 
     # NetSuite JDBC
     netsuite_jdbc_jar: str = ""
-    netsuite_jdbc_driver: str = "com.netsuite.jdbc.OpenAccessDriver"
+    netsuite_jdbc_jars: str = ""  # comma-separated list of additional JARs
+    netsuite_jdbc_driver: str = "com.netsuite.jdbc.openaccess.OpenAccessDriver"
     netsuite_jdbc_row_limit: int = 50
 
     # LLM (SQL generation)

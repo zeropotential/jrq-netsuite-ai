@@ -28,6 +28,7 @@ services:
       APP_KEY_ID: ${APP_KEY_ID}
       APP_KEK_B64: ${APP_KEK_B64}
       NETSUITE_JDBC_JAR: ${NETSUITE_JDBC_JAR}
+      NETSUITE_JDBC_JARS: ${NETSUITE_JDBC_JARS:-}
       NETSUITE_JDBC_DRIVER: ${NETSUITE_JDBC_DRIVER}
       NETSUITE_JDBC_ROW_LIMIT: ${NETSUITE_JDBC_ROW_LIMIT}
       LLM_PROVIDER: ${LLM_PROVIDER}
@@ -38,7 +39,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ${NETSUITE_JDBC_JAR}:${NETSUITE_JDBC_JAR}:ro
+      - /opt/netsuite:/opt/netsuite:ro
 
   caddy:
     image: caddy:2

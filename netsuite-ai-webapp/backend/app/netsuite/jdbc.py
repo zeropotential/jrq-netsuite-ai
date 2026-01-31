@@ -50,15 +50,25 @@ def _build_jdbc_url(conn: NetSuiteJdbcConnection) -> str:
     )
 
 
+def _get_jars() -> list[str]:
+    jars = []
+    if settings.netsuite_jdbc_jar:
+        jars.append(settings.netsuite_jdbc_jar)
+    if settings.netsuite_jdbc_jars:
+        jars.extend([j.strip() for j in settings.netsuite_jdbc_jars.split(",") if j.strip()])
+    return jars
+
+
 def _connect(conn: NetSuiteJdbcConnection, password: str):
-    if not settings.netsuite_jdbc_jar:
+    jars = _get_jars()
+    if not jars:
         raise JdbcError("NETSUITE_JDBC_JAR is not configured")
     try:
         return jaydebeapi.connect(
             settings.netsuite_jdbc_driver,
             _build_jdbc_url(conn),
             [conn.username, password],
-            jars=[settings.netsuite_jdbc_jar],
+            jars=jars,
         )
     except Exception as exc:
         raise JdbcError(f"JDBC connection failed: {exc}") from exc
