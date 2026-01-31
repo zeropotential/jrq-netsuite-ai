@@ -28,14 +28,30 @@ def _require_openai_client(api_key: str | None) -> OpenAI:
     return OpenAI(api_key=key)
 
 
-def _get_completion_kwargs(max_tokens: int) -> dict:
-    """Return the appropriate token limit parameter based on model."""
+def _is_gpt5_model() -> bool:
+    """Check if the configured model is a GPT-5 series model."""
     model = settings.openai_model.lower()
-    # GPT-5 series uses max_completion_tokens
-    if "gpt-5" in model or "o1" in model or "o3" in model:
-        return {"max_completion_tokens": max_tokens}
-    # Older models use max_tokens
-    return {"max_tokens": max_tokens}
+    return "gpt-5" in model or "o1" in model or "o3" in model
+
+
+def _get_completion_kwargs(max_tokens: int, temperature: float | None = None) -> dict:
+    """Return the appropriate parameters based on model.
+    
+    GPT-5 series:
+    - Uses max_completion_tokens instead of max_tokens
+    - Only supports temperature=1 (default), so we omit it
+    """
+    kwargs = {}
+    
+    if _is_gpt5_model():
+        kwargs["max_completion_tokens"] = max_tokens
+        # GPT-5 doesn't support custom temperature, omit it (defaults to 1)
+    else:
+        kwargs["max_tokens"] = max_tokens
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+    
+    return kwargs
 
 
 def generate_oracle_sql(
@@ -82,8 +98,7 @@ def generate_oracle_sql(
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        temperature=0.1,
-        **_get_completion_kwargs(max_tokens),
+        **_get_completion_kwargs(max_tokens, temperature=0.1),
     )
 
     content = (response.choices[0].message.content or "").strip()

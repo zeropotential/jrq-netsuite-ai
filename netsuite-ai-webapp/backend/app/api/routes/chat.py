@@ -68,8 +68,7 @@ def _classify_intent(client: OpenAI, message: str) -> str:
             },
             {"role": "user", "content": message}
         ],
-        temperature=0,
-        **_get_completion_kwargs(10),
+        **_get_completion_kwargs(10, temperature=0),
     )
     intent = (response.choices[0].message.content or "").strip().lower()
     if intent not in ("data_query", "general_question", "netsuite_help"):
@@ -101,8 +100,7 @@ def _answer_general_question(client: OpenAI, message: str, history: list[ChatMes
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=messages,
-        temperature=0.7,
-        **_get_completion_kwargs(500),
+        **_get_completion_kwargs(500, temperature=0.7),
     )
     return (response.choices[0].message.content or "").strip()
 
@@ -135,8 +133,7 @@ def _answer_netsuite_help(client: OpenAI, message: str, history: list[ChatMessag
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=messages,
-        temperature=0.7,
-        **_get_completion_kwargs(1000),
+        **_get_completion_kwargs(1000, temperature=0.7),
     )
     return (response.choices[0].message.content or "").strip()
 
