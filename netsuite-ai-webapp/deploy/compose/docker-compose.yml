@@ -49,7 +49,7 @@ services:
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST}
     volumes:
-      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${CADDYFILE_PATH:-../caddy/Caddyfile}:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
