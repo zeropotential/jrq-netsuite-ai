@@ -236,9 +236,21 @@
               history: chatHistory,
             }),
           });
-          const data = await response.json();
+          
+          // Handle non-JSON responses (like "Internal Server Error")
+          const contentType = response.headers.get("content-type");
+          let data;
+          if (contentType && contentType.includes("application/json")) {
+            data = await response.json();
+          } else {
+            const text = await response.text();
+            console.error("Non-JSON response:", text);
+            throw new Error(`Server error (${response.status}): ${text.substring(0, 200)}`);
+          }
+          
           if (!response.ok) {
-            throw new Error(data.detail || "Request failed");
+            console.error("API error response:", data);
+            throw new Error(data.detail || `Request failed with status ${response.status}`);
           }
           
           // Add to chat history for session memory
@@ -254,7 +266,10 @@
           statusEl.textContent = "";
           document.getElementById("message").value = "";
         } catch (err) {
-          statusEl.textContent = err.message;
+          console.error("Chat error:", err);
+          const errorMsg = err.message || "Unknown error occurred";
+          statusEl.textContent = errorMsg;
+          addMessage("Error", errorMsg, "Check browser console (F12) for details");
         } finally {
           sendBtn.disabled = false;
         }

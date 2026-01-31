@@ -1,5 +1,8 @@
+import logging
+import traceback
+
 from fastapi import APIRouter, Depends, Header, HTTPException
-from openai import OpenAI
+from openai import OpenAI, APIError, APIConnectionError, RateLimitError, AuthenticationError
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -7,6 +10,8 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.llm.sql_generator import LlmError, generate_oracle_sql, _get_completion_kwargs
 from app.netsuite.jdbc import JdbcError, run_query
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -142,6 +147,8 @@ def chat(
     db: Session = Depends(get_db),
     openai_api_key: str | None = Header(default=None, alias="X-OpenAI-Api-Key"),
 ) -> ChatResponse:
+    logger.info(f"Chat request received: {payload.message[:100]}...")
+    
     prompt = payload.message.strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="message is required")
@@ -150,6 +157,7 @@ def chat(
     try:
         client = _get_openai_client(openai_api_key)
     except LlmError as exc:
+        logger.error(f"OpenAI client error: {exc}")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Check if user provided raw SQL
@@ -158,17 +166,43 @@ def chat(
 
     # If not raw SQL, classify the intent
     if not is_raw_sql:
-        intent = _classify_intent(client, prompt)
+        try:
+            logger.info(f"Classifying intent for: {prompt[:50]}...")
+            intent = _classify_intent(client, prompt)
+            logger.info(f"Intent classified as: {intent}")
+        except AuthenticationError as exc:
+            logger.error(f"OpenAI authentication error: {exc}")
+            raise HTTPException(status_code=401, detail=f"OpenAI API authentication failed: {exc.message}") from exc
+        except RateLimitError as exc:
+            logger.error(f"OpenAI rate limit error: {exc}")
+            raise HTTPException(status_code=429, detail=f"OpenAI API rate limit exceeded: {exc.message}") from exc
+        except APIConnectionError as exc:
+            logger.error(f"OpenAI connection error: {exc}")
+            raise HTTPException(status_code=503, detail=f"Failed to connect to OpenAI API: {exc}") from exc
+        except APIError as exc:
+            logger.error(f"OpenAI API error: {exc}")
+            raise HTTPException(status_code=500, detail=f"OpenAI API error: {exc.message}") from exc
+        except Exception as exc:
+            logger.error(f"Unexpected error during intent classification: {exc}\n{traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Error classifying intent: {type(exc).__name__}: {exc}") from exc
         
         # Handle general questions (about the AI, model, etc.)
         if intent == "general_question":
-            answer = _answer_general_question(client, prompt, payload.history)
-            return ChatResponse(answer=answer, source="assistant", sql=None)
+            try:
+                answer = _answer_general_question(client, prompt, payload.history)
+                return ChatResponse(answer=answer, source="assistant", sql=None)
+            except Exception as exc:
+                logger.error(f"Error in general question: {exc}\n{traceback.format_exc()}")
+                raise HTTPException(status_code=500, detail=f"Error generating response: {type(exc).__name__}: {exc}") from exc
         
         # Handle NetSuite help/consulting questions
         if intent == "netsuite_help":
-            answer = _answer_netsuite_help(client, prompt, payload.history)
-            return ChatResponse(answer=answer, source="consultant", sql=None)
+            try:
+                answer = _answer_netsuite_help(client, prompt, payload.history)
+                return ChatResponse(answer=answer, source="consultant", sql=None)
+            except Exception as exc:
+                logger.error(f"Error in netsuite help: {exc}\n{traceback.format_exc()}")
+                raise HTTPException(status_code=500, detail=f"Error generating response: {type(exc).__name__}: {exc}") from exc
 
     # For data queries, require connection_id
     if not payload.connection_id:
@@ -181,10 +215,16 @@ def chat(
     sql = prompt
     if not is_raw_sql:
         try:
+            logger.info(f"Generating SQL for: {prompt[:50]}...")
             result = generate_oracle_sql(prompt=prompt, schema_hint=payload.scope, api_key=openai_api_key)
+            sql = result.sql
+            logger.info(f"Generated SQL: {sql[:100]}...")
         except LlmError as exc:
+            logger.error(f"LLM error: {exc}")
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        sql = result.sql
+        except Exception as exc:
+            logger.error(f"Error generating SQL: {exc}\n{traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Error generating SQL: {type(exc).__name__}: {exc}") from exc
         normalized = sql.lower().lstrip()
 
     if not (normalized.startswith("select") or normalized.startswith("with")):
@@ -205,11 +245,14 @@ def chat(
         sql = f"SELECT * FROM ({sql}) WHERE ROWNUM <= {settings.netsuite_jdbc_row_limit}"
 
     try:
+        logger.info(f"Executing SQL: {sql[:100]}...")
         result = run_query(db, payload.connection_id, sql, settings.netsuite_jdbc_row_limit)
     except JdbcError as exc:
+        logger.error(f"JDBC error: {exc}")
         raise HTTPException(status_code=400, detail=f"{exc} | SQL: {sql}") from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"JDBC query failed | SQL: {sql}") from exc
+        logger.error(f"Query execution error: {exc}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"JDBC query failed: {type(exc).__name__}: {exc} | SQL: {sql}") from exc
 
     columns = result.get("columns", [])
     rows = result.get("rows", [])
@@ -222,4 +265,5 @@ def chat(
             lines.append(" | ".join(str(value) for value in row))
         answer = "\n".join(lines)
 
+    logger.info(f"Chat response: {len(rows)} rows returned")
     return ChatResponse(answer=answer, source="netsuite_jdbc", sql=sql)
