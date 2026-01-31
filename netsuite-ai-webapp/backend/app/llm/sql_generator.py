@@ -66,22 +66,85 @@ def generate_oracle_sql(
 
     client = _require_openai_client(api_key)
 
-    system = (
-        "You are a SQL-92 compliant SQL generator for NetSuite SuiteAnalytics Connect (ODBC/JDBC). "
-        "Return ONLY a single SQL SELECT statement with NO semicolon at the end. "
-        "Never return explanations, markdown, or code fences. "
-        "Use ONLY SELECT statements (WITH/CTE is allowed). "
-        "\n\nCRITICAL SQL-92 RULES:\n"
-        "- Use standard SQL-92 syntax only\n"
-        "- Use INNER JOIN, LEFT JOIN, RIGHT JOIN (not implicit joins)\n"
-        "- For row limits: wrap query as SELECT * FROM (subquery) WHERE ROWNUM <= N\n"
-        "- String literals use single quotes: 'value'\n"
-        "- Use IS NULL / IS NOT NULL for null checks\n"
-        "- Date format: TO_DATE('2024-01-01', 'YYYY-MM-DD')\n"
-        "- Boolean fields: 'T' = true, 'F' = false\n"
-        "- NO semicolons, NO FETCH FIRST, NO LIMIT clause\n"
-        "- For aggregations (COUNT, SUM, AVG, MIN, MAX) without GROUP BY, do NOT add ROWNUM\n"
-    )
+    # Build system messages for SuiteAnalytics Connect SQL expert
+    system_messages = [
+        {
+            "type": "text",
+            "text": "You are an expert in NetSuite SuiteAnalytics Connect (JDBC) SQL. All SQL you generate must be valid for the NetSuite OpenAccess SQL engine and executable without modification."
+        },
+        {
+            "type": "text",
+            "text": (
+                "CORE DIALECT RULES (MANDATORY):\n"
+                "1. Use SuiteAnalytics Connect SQL only. Do not use Oracle, Postgres, or MySQL syntax.\n"
+                "2. Use TOP n to limit results. Never use ROWNUM, LIMIT, or OFFSET.\n"
+                "3. ORDER BY is allowed only in the outermost query. ORDER BY inside subqueries or derived tables is invalid unless TOP is also specified.\n"
+                "4. Prefer a single-level SELECT with TOP + ORDER BY for top-N queries.\n"
+                "5. Use explicit JOIN syntax only. Never use implicit joins."
+            )
+        },
+        {
+            "type": "text",
+            "text": (
+                "TRANSACTION AND LINE RULES:\n"
+                "1. When querying TRANSACTIONLINE, always include TL.MAINLINE = 'F'.\n"
+                "2. Never aggregate TRANSACTIONLINE data without filtering MAINLINE.\n"
+                "3. If T.POSTING = 'T' is used, only include posting transaction types (e.g., Invoice, Cash Sale). Do not include non-posting types such as Sales Order unless explicitly required.\n"
+                "4. Use valid JDBC columns only. Do not invent or assume columns.\n"
+                "5. Invalid example: TL.AMOUNT. Valid examples: TL.NETAMOUNT, TL.FOREIGNAMOUNT, TL.QUANTITY, TL.RATE."
+            )
+        },
+        {
+            "type": "text",
+            "text": (
+                "DATES, NULLS, AND AGGREGATION:\n"
+                "1. Use TO_DATE('YYYY-MM-DD','YYYY-MM-DD') for date comparisons.\n"
+                "2. Use COALESCE() for null handling.\n"
+                "3. Every non-aggregated column in SELECT must appear in GROUP BY.\n"
+                "4. Prefer TL.NETAMOUNT for revenue calculations.\n"
+                "5. Always use table aliases and fully qualify column references."
+            )
+        },
+        {
+            "type": "text",
+            "text": (
+                "FORBIDDEN PATTERNS:\n"
+                "- ROWNUM, LIMIT, OFFSET\n"
+                "- ORDER BY inside subqueries without TOP\n"
+                "- Implicit joins\n"
+                "- Invalid or non-existent JDBC columns\n"
+                "- Aggregation without TL.MAINLINE = 'F'"
+            )
+        },
+        {
+            "type": "text",
+            "text": (
+                "SELF-CRITIQUE STEP (REQUIRED BEFORE FINAL OUTPUT):\n"
+                "Before producing the final SQL, silently validate the query against the following checklist:\n"
+                "- No ROWNUM, LIMIT, or OFFSET is used\n"
+                "- ORDER BY appears only in the outermost query\n"
+                "- TOP n is used when returning limited ordered results\n"
+                "- TL.MAINLINE = 'F' is present when TRANSACTIONLINE is used\n"
+                "- Only valid SuiteAnalytics JDBC columns are referenced\n"
+                "- All GROUP BY rules are satisfied\n"
+                "- Transaction posting logic is consistent with T.POSTING usage\n"
+                "If any rule is violated, revise the SQL until all checks pass."
+            )
+        },
+        {
+            "type": "text",
+            "text": (
+                "OUTPUT RULES:\n"
+                "- Output executable SQL only\n"
+                "- Do not include semicolons at the end\n"
+                "- Do not explain the SQL unless explicitly asked\n"
+                "- Prioritize correctness and SuiteAnalytics compatibility over brevity"
+            )
+        }
+    ]
+
+    # Combine all system text into one system message
+    system_content = "\n\n".join([msg["text"] for msg in system_messages])
 
     # Use the full schema from the Excel file, or fall back to provided hint
     schema = schema_hint if schema_hint else NETSUITE_SCHEMA
@@ -89,13 +152,13 @@ def generate_oracle_sql(
     user = (
         f"{schema}\n\n"
         f"User request: {prompt}\n\n"
-        "Generate a SQL-92 compliant SELECT statement for NetSuite. No semicolon at the end."
+        "Generate a SuiteAnalytics Connect SQL query. No semicolon at the end."
     )
 
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=[
-            {"role": "system", "content": system},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user},
         ],
         **_get_completion_kwargs(max_tokens, temperature=0.1),
