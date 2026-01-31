@@ -42,58 +42,93 @@ def _get_openai_client(api_key: str | None) -> OpenAI:
     return OpenAI(api_key=key)
 
 
+def _classify_intent_by_keywords(message: str) -> str | None:
+    """Quick keyword-based classification. Returns None if uncertain."""
+    msg_lower = message.lower()
+    
+    # Data query indicators - user wants to retrieve data
+    data_keywords = [
+        "how many", "count", "list", "show me", "get me", "find", "retrieve",
+        "total", "sum", "average", "employees", "customers", "vendors",
+        "transactions", "invoices", "orders", "items", "records",
+        "sales", "revenue", "balance", "report", "data"
+    ]
+    
+    # General question indicators - about the AI itself
+    general_keywords = [
+        "who are you", "what are you", "your name", "what model",
+        "what can you do", "how do you work", "hello", "hi there",
+        "hey", "thanks", "thank you", "goodbye", "bye"
+    ]
+    
+    # Check for general questions first (they're more specific)
+    for keyword in general_keywords:
+        if keyword in msg_lower:
+            return "general_question"
+    
+    # Check for data queries
+    for keyword in data_keywords:
+        if keyword in msg_lower:
+            return "data_query"
+    
+    # NetSuite help indicators
+    netsuite_help_patterns = [
+        "how do i", "how to", "what is the process", "best practice",
+        "explain", "configure", "setup", "setting up"
+    ]
+    for pattern in netsuite_help_patterns:
+        if pattern in msg_lower:
+            # If it's asking "how to" but with data keywords, it's likely data_query
+            if any(dk in msg_lower for dk in ["employees", "customers", "transactions", "invoices"]):
+                return "data_query"
+            return "netsuite_help"
+    
+    return None  # Uncertain, let LLM decide
+
+
 def _classify_intent(client: OpenAI, message: str) -> str:
     """Classify user intent: 'data_query', 'general_question', or 'netsuite_help'."""
-    response = client.chat.completions.create(
-        model=settings.openai_model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are an intent classifier. Your job is to determine what type of request the user is making.\n\n"
-                    "RESPOND WITH EXACTLY ONE OF THESE THREE WORDS (nothing else):\n"
-                    "- data_query\n"
-                    "- general_question\n"
-                    "- netsuite_help\n\n"
-                    "CLASSIFICATION RULES:\n"
-                    "1. 'data_query' - User wants to GET DATA from a database (count, list, show, get, find, retrieve, "
-                    "total, sum, how many records/rows, sales figures, employee list, customer data, etc.)\n"
-                    "2. 'general_question' - User is asking about YOU (the AI), your capabilities, who you are, what model "
-                    "you use, greetings like 'hello', 'hi', or ANY non-NetSuite topic\n"
-                    "3. 'netsuite_help' - User wants ADVICE or EXPLANATIONS about NetSuite processes, features, "
-                    "workflows, best practices (NOT data retrieval)\n\n"
-                    "EXAMPLES:\n"
-                    "- 'how many employees' -> data_query (wants count from database)\n"
-                    "- 'list all customers' -> data_query (wants data from database)\n"
-                    "- 'what is your name' -> general_question (asking about AI)\n"
-                    "- 'who are you' -> general_question (asking about AI)\n"
-                    "- 'hello' -> general_question (greeting)\n"
-                    "- 'what can you do' -> general_question (asking about AI capabilities)\n"
-                    "- 'how do I create an invoice' -> netsuite_help (wants process advice)\n"
-                    "- 'what is revenue recognition' -> netsuite_help (wants explanation)\n\n"
-                    "IMPORTANT: Only output ONE word. No explanations."
-                )
-            },
-            {"role": "user", "content": f"Classify this message: {message}"}
-        ],
-        **_get_completion_kwargs(20, temperature=0),
-    )
-    raw_intent = (response.choices[0].message.content or "").strip().lower()
-    logger.info(f"Raw intent response: '{raw_intent}'")
     
-    # Extract the intent keyword from the response
-    if "data_query" in raw_intent:
-        intent = "data_query"
-    elif "general_question" in raw_intent:
-        intent = "general_question"
-    elif "netsuite_help" in raw_intent:
-        intent = "netsuite_help"
-    else:
-        # Default to general_question if unclear (safer than running SQL)
-        logger.warning(f"Could not parse intent from '{raw_intent}', defaulting to general_question")
-        intent = "general_question"
+    # First try keyword-based classification (fast and reliable)
+    keyword_intent = _classify_intent_by_keywords(message)
+    if keyword_intent:
+        logger.info(f"Intent classified by keywords: {keyword_intent}")
+        return keyword_intent
     
-    return intent
+    # Fall back to LLM classification for ambiguous cases
+    try:
+        response = client.chat.completions.create(
+            model=settings.openai_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Classify the user message into ONE category. Reply with ONLY the category name:\n"
+                        "- data_query (user wants database data: counts, lists, reports)\n"
+                        "- general_question (user asks about you/AI, greetings, non-NetSuite topics)\n"
+                        "- netsuite_help (user wants NetSuite advice, how-to, explanations)"
+                    )
+                },
+                {"role": "user", "content": message}
+            ],
+            **_get_completion_kwargs(20, temperature=0),
+        )
+        raw_intent = (response.choices[0].message.content or "").strip().lower()
+        logger.info(f"LLM raw intent response: '{raw_intent}'")
+        
+        # Extract the intent keyword from the response
+        if "data" in raw_intent:
+            return "data_query"
+        elif "general" in raw_intent:
+            return "general_question"
+        elif "help" in raw_intent or "netsuite" in raw_intent:
+            return "netsuite_help"
+        else:
+            logger.warning(f"Could not parse LLM intent from '{raw_intent}', defaulting to data_query")
+            return "data_query"
+    except Exception as e:
+        logger.error(f"LLM classification failed: {e}, defaulting to data_query")
+        return "data_query"
 
 
 def _answer_general_question(client: OpenAI, message: str, history: list[ChatMessage] | None = None) -> str:
