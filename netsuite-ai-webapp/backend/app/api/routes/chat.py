@@ -50,30 +50,49 @@ def _classify_intent(client: OpenAI, message: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "You classify user messages into exactly one category. "
-                    "Respond with ONLY one word:\n"
-                    "- 'data_query' if the user wants to retrieve, count, list, or analyze data from NetSuite\n"
-                    "- 'general_question' if asking about you, the AI, the model, or non-NetSuite topics\n"
-                    "- 'netsuite_help' if asking for NetSuite advice, how-to, best practices, or explanations\n"
-                    "Examples:\n"
-                    "- 'how many employees' -> data_query\n"
-                    "- 'list all customers' -> data_query\n"
-                    "- 'what model are you using' -> general_question\n"
-                    "- 'who are you' -> general_question\n"
-                    "- 'do not run sql' -> general_question\n"
-                    "- 'how do I create an invoice in NetSuite' -> netsuite_help\n"
-                    "- 'what is revenue recognition' -> netsuite_help\n"
-                    "- 'explain deferred revenue' -> netsuite_help"
+                    "You are an intent classifier. Your job is to determine what type of request the user is making.\n\n"
+                    "RESPOND WITH EXACTLY ONE OF THESE THREE WORDS (nothing else):\n"
+                    "- data_query\n"
+                    "- general_question\n"
+                    "- netsuite_help\n\n"
+                    "CLASSIFICATION RULES:\n"
+                    "1. 'data_query' - User wants to GET DATA from a database (count, list, show, get, find, retrieve, "
+                    "total, sum, how many records/rows, sales figures, employee list, customer data, etc.)\n"
+                    "2. 'general_question' - User is asking about YOU (the AI), your capabilities, who you are, what model "
+                    "you use, greetings like 'hello', 'hi', or ANY non-NetSuite topic\n"
+                    "3. 'netsuite_help' - User wants ADVICE or EXPLANATIONS about NetSuite processes, features, "
+                    "workflows, best practices (NOT data retrieval)\n\n"
+                    "EXAMPLES:\n"
+                    "- 'how many employees' -> data_query (wants count from database)\n"
+                    "- 'list all customers' -> data_query (wants data from database)\n"
+                    "- 'what is your name' -> general_question (asking about AI)\n"
+                    "- 'who are you' -> general_question (asking about AI)\n"
+                    "- 'hello' -> general_question (greeting)\n"
+                    "- 'what can you do' -> general_question (asking about AI capabilities)\n"
+                    "- 'how do I create an invoice' -> netsuite_help (wants process advice)\n"
+                    "- 'what is revenue recognition' -> netsuite_help (wants explanation)\n\n"
+                    "IMPORTANT: Only output ONE word. No explanations."
                 )
             },
-            {"role": "user", "content": message}
+            {"role": "user", "content": f"Classify this message: {message}"}
         ],
-        **_get_completion_kwargs(10, temperature=0),
+        **_get_completion_kwargs(20, temperature=0),
     )
-    intent = (response.choices[0].message.content or "").strip().lower()
-    if intent not in ("data_query", "general_question", "netsuite_help"):
-        # Default to data_query if unclear
-        return "data_query"
+    raw_intent = (response.choices[0].message.content or "").strip().lower()
+    logger.info(f"Raw intent response: '{raw_intent}'")
+    
+    # Extract the intent keyword from the response
+    if "data_query" in raw_intent:
+        intent = "data_query"
+    elif "general_question" in raw_intent:
+        intent = "general_question"
+    elif "netsuite_help" in raw_intent:
+        intent = "netsuite_help"
+    else:
+        # Default to general_question if unclear (safer than running SQL)
+        logger.warning(f"Could not parse intent from '{raw_intent}', defaulting to general_question")
+        intent = "general_question"
+    
     return intent
 
 
