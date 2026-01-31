@@ -29,7 +29,7 @@ def generate_oracle_sql(
     *,
     prompt: str,
     schema_hint: str | None = None,
-    max_tokens: int = 800,
+    max_completion_tokens: int = 800,
     api_key: str | None = None,
 ) -> SqlGenerationResult:
     if settings.llm_provider.lower() != "openai":
@@ -70,7 +70,7 @@ def generate_oracle_sql(
             {"role": "user", "content": user},
         ],
         temperature=0.1,
-        max_tokens=max_tokens,
+        max_completion_tokens=max_completion_tokens,
     )
 
     content = (response.choices[0].message.content or "").strip()
