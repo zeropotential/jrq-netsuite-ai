@@ -4,8 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # JVM for JPype/JDBC (used in later steps)
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl ca-certificates \
+RUN apt-get -o Acquire::Retries=3 update \
+  && apt-get -o Acquire::Retries=3 install -y --no-install-recommends openjdk-17-jre-headless curl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
