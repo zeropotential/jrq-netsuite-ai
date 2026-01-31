@@ -161,11 +161,17 @@ def generate_oracle_sql(
             {"role": "system", "content": system_content},
             {"role": "user", "content": user},
         ],
-        **_get_completion_kwargs(max_tokens, temperature=0.1),
+        **_get_completion_kwargs(max_tokens),
     )
 
+    logger.info(f"SQL generation response: finish_reason={response.choices[0].finish_reason}")
+    
     content = (response.choices[0].message.content or "").strip()
     if not content:
-        raise LlmError("LLM returned empty response")
+        # Log more details for debugging
+        logger.error(f"LLM returned empty response. Model: {settings.openai_model}, "
+                    f"finish_reason: {response.choices[0].finish_reason}, "
+                    f"prompt length: {len(user)}")
+        raise LlmError("LLM returned empty response - the model may not have generated SQL for this query")
 
     return SqlGenerationResult(sql=content, model=settings.openai_model)
