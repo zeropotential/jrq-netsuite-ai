@@ -58,7 +58,7 @@ def generate_oracle_sql(
     *,
     prompt: str,
     schema_hint: str | None = None,
-    max_tokens: int = 800,
+    max_tokens: int = 2048,
     api_key: str | None = None,
 ) -> SqlGenerationResult:
     if settings.llm_provider.lower() != "openai":

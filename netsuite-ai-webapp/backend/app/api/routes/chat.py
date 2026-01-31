@@ -42,60 +42,8 @@ def _get_openai_client(api_key: str | None) -> OpenAI:
     return OpenAI(api_key=key)
 
 
-def _classify_intent_by_keywords(message: str) -> str | None:
-    """Quick keyword-based classification. Returns None if uncertain."""
-    msg_lower = message.lower()
-    
-    # Data query indicators - user wants to retrieve data
-    data_keywords = [
-        "how many", "count", "list", "show me", "get me", "find", "retrieve",
-        "total", "sum", "average", "employees", "customers", "vendors",
-        "transactions", "invoices", "orders", "items", "records",
-        "sales", "revenue", "balance", "report", "data"
-    ]
-    
-    # General question indicators - about the AI itself
-    general_keywords = [
-        "who are you", "what are you", "your name", "what model",
-        "what can you do", "how do you work", "hello", "hi there",
-        "hey", "thanks", "thank you", "goodbye", "bye"
-    ]
-    
-    # Check for general questions first (they're more specific)
-    for keyword in general_keywords:
-        if keyword in msg_lower:
-            return "general_question"
-    
-    # Check for data queries
-    for keyword in data_keywords:
-        if keyword in msg_lower:
-            return "data_query"
-    
-    # NetSuite help indicators
-    netsuite_help_patterns = [
-        "how do i", "how to", "what is the process", "best practice",
-        "explain", "configure", "setup", "setting up"
-    ]
-    for pattern in netsuite_help_patterns:
-        if pattern in msg_lower:
-            # If it's asking "how to" but with data keywords, it's likely data_query
-            if any(dk in msg_lower for dk in ["employees", "customers", "transactions", "invoices"]):
-                return "data_query"
-            return "netsuite_help"
-    
-    return None  # Uncertain, let LLM decide
-
-
 def _classify_intent(client: OpenAI, message: str) -> str:
-    """Classify user intent: 'data_query', 'general_question', or 'netsuite_help'."""
-    
-    # First try keyword-based classification (fast and reliable)
-    keyword_intent = _classify_intent_by_keywords(message)
-    if keyword_intent:
-        logger.info(f"Intent classified by keywords: {keyword_intent}")
-        return keyword_intent
-    
-    # Fall back to LLM classification for ambiguous cases
+    """Use LLM to classify user intent: 'data_query', 'general_question', or 'netsuite_help'."""
     try:
         response = client.chat.completions.create(
             model=settings.openai_model,
@@ -103,32 +51,39 @@ def _classify_intent(client: OpenAI, message: str) -> str:
                 {
                     "role": "system",
                     "content": (
-                        "Classify the user message into ONE category. Reply with ONLY the category name:\n"
-                        "- data_query (user wants database data: counts, lists, reports)\n"
-                        "- general_question (user asks about you/AI, greetings, non-NetSuite topics)\n"
-                        "- netsuite_help (user wants NetSuite advice, how-to, explanations)"
+                        "You are an intent classifier for a NetSuite AI Assistant. "
+                        "Analyze the user's message and determine which persona should handle it.\n\n"
+                        "RESPOND WITH EXACTLY ONE OF THESE THREE OPTIONS:\n\n"
+                        "1. data_query - User wants to retrieve, query, count, list, or analyze DATA from NetSuite database. "
+                        "Examples: 'how many employees', 'list customers', 'show me sales', 'count invoices', 'get transactions'\n\n"
+                        "2. general_question - User is making conversation, asking about the AI itself, greetings, "
+                        "or topics unrelated to NetSuite. "
+                        "Examples: 'hi', 'hello', 'who are you', 'what model are you', 'thanks', 'what can you do'\n\n"
+                        "3. netsuite_help - User wants advice, explanations, best practices, or help about NetSuite "
+                        "processes and features (NOT data retrieval). "
+                        "Examples: 'how do I create an invoice', 'explain revenue recognition', 'what is deferred revenue'\n\n"
+                        "Reply with ONLY the category name, nothing else."
                     )
                 },
                 {"role": "user", "content": message}
             ],
-            **_get_completion_kwargs(20, temperature=0),
         )
         raw_intent = (response.choices[0].message.content or "").strip().lower()
-        logger.info(f"LLM raw intent response: '{raw_intent}'")
+        logger.info(f"LLM intent classification: '{raw_intent}'")
         
         # Extract the intent keyword from the response
-        if "data" in raw_intent:
+        if "data_query" in raw_intent or "data" in raw_intent:
             return "data_query"
-        elif "general" in raw_intent:
+        elif "general_question" in raw_intent or "general" in raw_intent:
             return "general_question"
-        elif "help" in raw_intent or "netsuite" in raw_intent:
+        elif "netsuite_help" in raw_intent or "help" in raw_intent:
             return "netsuite_help"
         else:
-            logger.warning(f"Could not parse LLM intent from '{raw_intent}', defaulting to data_query")
-            return "data_query"
+            logger.warning(f"Could not parse LLM intent from '{raw_intent}', defaulting to general_question")
+            return "general_question"
     except Exception as e:
-        logger.error(f"LLM classification failed: {e}, defaulting to data_query")
-        return "data_query"
+        logger.error(f"LLM classification failed: {e}, defaulting to general_question")
+        return "general_question"
 
 
 def _answer_general_question(client: OpenAI, message: str, history: list[ChatMessage] | None = None) -> str:
@@ -154,7 +109,7 @@ def _answer_general_question(client: OpenAI, message: str, history: list[ChatMes
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=messages,
-        **_get_completion_kwargs(500, temperature=0.7),
+        **_get_completion_kwargs(4096, temperature=0.7),
     )
     return (response.choices[0].message.content or "").strip()
 
@@ -187,7 +142,7 @@ def _answer_netsuite_help(client: OpenAI, message: str, history: list[ChatMessag
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=messages,
-        **_get_completion_kwargs(1000, temperature=0.7),
+        **_get_completion_kwargs(4096, temperature=0.7),
     )
     return (response.choices[0].message.content or "").strip()
 
