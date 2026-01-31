@@ -111,6 +111,44 @@
           grid-template-columns: 1fr;
         }
       }
+      /* Thinking animation */
+      .thinking {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .thinking-dots {
+        display: flex;
+        gap: 4px;
+      }
+      .thinking-dots span {
+        width: 8px;
+        height: 8px;
+        background: var(--accent);
+        border-radius: 50%;
+        animation: bounce 1.4s infinite ease-in-out;
+      }
+      .thinking-dots span:nth-child(1) { animation-delay: -0.32s; }
+      .thinking-dots span:nth-child(2) { animation-delay: -0.16s; }
+      .thinking-dots span:nth-child(3) { animation-delay: 0s; }
+      @keyframes bounce {
+        0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+        40% { transform: scale(1); opacity: 1; }
+      }
+      /* Typing cursor */
+      .typing-cursor {
+        display: inline-block;
+        width: 2px;
+        height: 1em;
+        background: var(--accent);
+        margin-left: 2px;
+        animation: blink 1s infinite;
+        vertical-align: text-bottom;
+      }
+      @keyframes blink {
+        0%, 50% { opacity: 1; }
+        51%, 100% { opacity: 0; }
+      }
     </style>
   </head>
   <body>
@@ -185,6 +223,93 @@
         div.className = "message";
         div.innerHTML = `<strong>${label}</strong><div>${text}</div>${source ? `<small>${source}</small>` : ""}`;
         chatEl.prepend(div);
+        return div;
+      };
+
+      // Add thinking indicator
+      const addThinkingIndicator = () => {
+        const div = document.createElement("div");
+        div.className = "message";
+        div.id = "thinking-indicator";
+        div.innerHTML = `
+          <strong>Assistant</strong>
+          <div class="thinking">
+            <span>Thinking</span>
+            <div class="thinking-dots">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        `;
+        chatEl.prepend(div);
+        return div;
+      };
+
+      // Remove thinking indicator
+      const removeThinkingIndicator = () => {
+        const indicator = document.getElementById("thinking-indicator");
+        if (indicator) indicator.remove();
+      };
+
+      // Typing effect function
+      const typeText = async (element, text, speed = 15) => {
+        const contentDiv = element.querySelector("div");
+        contentDiv.innerHTML = "";
+        
+        // For data tables (contains pipes), show instantly
+        if (text.includes(" | ") && text.includes("\n")) {
+          contentDiv.innerHTML = text.replace(/\n/g, "<br>");
+          return;
+        }
+        
+        // Add cursor
+        const cursor = document.createElement("span");
+        cursor.className = "typing-cursor";
+        contentDiv.appendChild(cursor);
+        
+        // Type character by character
+        let i = 0;
+        const chars = text.split("");
+        
+        return new Promise((resolve) => {
+          const typeChar = () => {
+            if (i < chars.length) {
+              // Insert text before cursor
+              const textNode = document.createTextNode(chars[i]);
+              contentDiv.insertBefore(textNode, cursor);
+              
+              // Handle newlines
+              if (chars[i] === "\n") {
+                const br = document.createElement("br");
+                contentDiv.insertBefore(br, cursor);
+              }
+              
+              i++;
+              // Vary speed slightly for more natural feel
+              const delay = chars[i-1] === "." || chars[i-1] === "!" || chars[i-1] === "?" ? speed * 3 : speed;
+              setTimeout(typeChar, delay);
+            } else {
+              // Remove cursor when done
+              cursor.remove();
+              resolve();
+            }
+          };
+          typeChar();
+        });
+      };
+
+      // Add message with typing effect
+      const addMessageWithTyping = async (label, text, source) => {
+        const div = document.createElement("div");
+        div.className = "message";
+        div.innerHTML = `<strong>${label}</strong><div></div>${source ? `<small>${source}</small>` : ""}`;
+        chatEl.prepend(div);
+        await typeText(div, text);
+        // Re-add source after typing (in case it was cleared)
+        if (source) {
+          const small = div.querySelector("small");
+          if (small) small.innerHTML = source;
+        }
+        return div;
       };
 
       const getPayload = () => {
@@ -220,10 +345,11 @@
         const payload = getPayload();
         if (!payload) return;
 
-        statusEl.textContent = "Sending...";
+        statusEl.textContent = "";
         sendBtn.disabled = true;
 
         addMessage("You", payload.prompt);
+        addThinkingIndicator();
 
         try {
           const response = await fetch("/api/chat", {
@@ -236,6 +362,8 @@
               history: chatHistory,
             }),
           });
+          
+          removeThinkingIndicator();
           
           // Handle non-JSON responses (like "Internal Server Error")
           const contentType = response.headers.get("content-type");
@@ -269,10 +397,13 @@
           if (data.sql) {
             sourceInfo += (sourceInfo ? "<br>" : "") + `<details><summary>View SQL</summary><pre style="background:#1e293b;padding:8px;border-radius:4px;overflow-x:auto;margin-top:4px;">${data.sql}</pre></details>`;
           }
-          addMessage("Assistant", data.answer, sourceInfo);
+          
+          // Use typing effect for assistant responses
+          await addMessageWithTyping("Assistant", data.answer, sourceInfo);
           statusEl.textContent = "";
           document.getElementById("message").value = "";
         } catch (err) {
+          removeThinkingIndicator();
           console.error("Chat error:", err);
           const errorMsg = err.message || "Unknown error occurred";
           statusEl.textContent = errorMsg;
