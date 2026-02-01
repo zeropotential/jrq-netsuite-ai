@@ -5,8 +5,17 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Security: Disable trust authentication
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # SECURITY: Do NOT expose port externally - only internal network
+    # Remove or comment this to prevent external access:
+    # ports:
+    #   - "5432:5432"
+    networks:
+      - internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -15,9 +24,12 @@ services:
 
   redis:
     image: redis:7
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-changeme}"]
     volumes:
       - redis_data:/data
+    # SECURITY: Internal network only
+    networks:
+      - internal
 
   api:
     build:
@@ -33,11 +45,17 @@ services:
       NETSUITE_JDBC_ROW_LIMIT: ${NETSUITE_JDBC_ROW_LIMIT}
       LLM_PROVIDER: ${LLM_PROVIDER}
       OPENAI_MODEL: ${OPENAI_MODEL}
+      # Database security settings
+      DB_SSL_MODE: ${DB_SSL_MODE:-prefer}
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "8000:8000"
+    # SECURITY: Don't expose API port directly, use Caddy reverse proxy
+    # ports:
+    #   - "8000:8000"
+    networks:
+      - internal
+      - web
     volumes:
       - /opt/netsuite:/opt/netsuite:ro
 
@@ -54,6 +72,15 @@ services:
       - caddy_config:/config
     depends_on:
       - api
+    networks:
+      - web
+
+networks:
+  internal:
+    # Internal network - not accessible from outside
+    internal: true
+  web:
+    # Web network - for Caddy to API communication
 
 volumes:
   postgres_data:

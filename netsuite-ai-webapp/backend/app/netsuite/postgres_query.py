@@ -79,7 +79,8 @@ def _rewrite_syntax(sql: str) -> str:
 
 def _validate_sql(sql: str) -> None:
     """
-    Basic SQL validation to prevent dangerous operations.
+    Strict SQL validation to prevent dangerous operations.
+    Only allows SELECT queries on specific tables.
     """
     sql_upper = sql.upper().strip()
     
@@ -87,11 +88,30 @@ def _validate_sql(sql: str) -> None:
     if not sql_upper.startswith("SELECT"):
         raise ValueError("Only SELECT queries are allowed")
     
-    # Block dangerous keywords
-    dangerous = ["DROP", "DELETE", "UPDATE", "INSERT", "TRUNCATE", "ALTER", "CREATE", "GRANT", "REVOKE"]
+    # Block dangerous keywords (comprehensive list)
+    dangerous = [
+        "DROP", "DELETE", "UPDATE", "INSERT", "TRUNCATE", "ALTER", "CREATE", 
+        "GRANT", "REVOKE", "EXEC", "EXECUTE", "CALL", "COPY", "LOAD",
+        "INTO OUTFILE", "INTO DUMPFILE", "LOAD_FILE",
+        "INFORMATION_SCHEMA", "PG_", "SYS.",  # System tables
+        ";",  # No multi-statement
+    ]
     for keyword in dangerous:
-        if re.search(rf'\b{keyword}\b', sql_upper):
+        if keyword in sql_upper:
             raise ValueError(f"Dangerous keyword not allowed: {keyword}")
+    
+    # Ensure only allowed tables are queried
+    # Extract table names from query (basic pattern matching)
+    import re
+    # Match FROM/JOIN followed by table name
+    table_pattern = r'\b(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)'
+    found_tables = re.findall(table_pattern, sql, re.IGNORECASE)
+    
+    allowed = {"ns_account", "ns_transaction", "ns_transactionline", 
+               "account", "transaction", "transactionline"}
+    for table in found_tables:
+        if table.lower() not in allowed:
+            raise ValueError(f"Table not allowed: {table}. Only NetSuite mirror tables are queryable.")
 
 
 def execute_postgres_query(
