@@ -21,11 +21,17 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class KnowledgeBaseEntry(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    content: str = Field(..., min_length=1, max_length=4000)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     connection_id: str | None = None
     scope: str | None = None
     history: list[ChatMessage] = Field(default_factory=list, max_length=20)
+    kb_entries: list[KnowledgeBaseEntry] = Field(default_factory=list, max_length=20)
 
 
 class ChatResponse(BaseModel):
@@ -86,8 +92,23 @@ def _classify_intent(client: OpenAI, message: str) -> str:
         return "general_question"
 
 
-def _answer_general_question(client: OpenAI, message: str, history: list[ChatMessage] | None = None) -> str:
+def _format_kb_context(kb_entries: list[KnowledgeBaseEntry] | None) -> str:
+    if not kb_entries:
+        return ""
+    lines = ["KNOWLEDGE BASE (use as authoritative context):"]
+    for entry in kb_entries:
+        lines.append(f"- {entry.title}: {entry.content}")
+    return "\n".join(lines)
+
+
+def _answer_general_question(
+    client: OpenAI,
+    message: str,
+    history: list[ChatMessage] | None = None,
+    kb_entries: list[KnowledgeBaseEntry] | None = None,
+) -> str:
     """Answer general questions about the AI itself."""
+    kb_context = _format_kb_context(kb_entries)
     messages = [
         {
             "role": "system",
@@ -100,6 +121,8 @@ def _answer_general_question(client: OpenAI, message: str, history: list[ChatMes
             )
         }
     ]
+    if kb_context:
+        messages.append({"role": "system", "content": kb_context})
     # Add conversation history
     if history:
         for msg in history[-10:]:  # Last 10 messages for context
@@ -114,8 +137,14 @@ def _answer_general_question(client: OpenAI, message: str, history: list[ChatMes
     return (response.choices[0].message.content or "").strip()
 
 
-def _answer_netsuite_help(client: OpenAI, message: str, history: list[ChatMessage] | None = None) -> str:
+def _answer_netsuite_help(
+    client: OpenAI,
+    message: str,
+    history: list[ChatMessage] | None = None,
+    kb_entries: list[KnowledgeBaseEntry] | None = None,
+) -> str:
     """Answer NetSuite functional/accounting questions like a consultant."""
+    kb_context = _format_kb_context(kb_entries)
     messages = [
         {
             "role": "system",
@@ -133,6 +162,8 @@ def _answer_netsuite_help(client: OpenAI, message: str, history: list[ChatMessag
             )
         }
     ]
+    if kb_context:
+        messages.append({"role": "system", "content": kb_context})
     # Add conversation history
     if history:
         for msg in history[-10:]:  # Last 10 messages for context
@@ -195,7 +226,7 @@ def chat(
         # Handle general questions (about the AI, model, etc.)
         if intent == "general_question":
             try:
-                answer = _answer_general_question(client, prompt, payload.history)
+                answer = _answer_general_question(client, prompt, payload.history, payload.kb_entries)
                 return ChatResponse(answer=answer, source="assistant", sql=None)
             except Exception as exc:
                 logger.error(f"Error in general question: {exc}\n{traceback.format_exc()}")
@@ -204,7 +235,7 @@ def chat(
         # Handle NetSuite help/consulting questions
         if intent == "netsuite_help":
             try:
-                answer = _answer_netsuite_help(client, prompt, payload.history)
+                answer = _answer_netsuite_help(client, prompt, payload.history, payload.kb_entries)
                 return ChatResponse(answer=answer, source="consultant", sql=None)
             except Exception as exc:
                 logger.error(f"Error in netsuite help: {exc}\n{traceback.format_exc()}")
@@ -222,7 +253,12 @@ def chat(
     if not is_raw_sql:
         try:
             logger.info(f"Generating SQL for: {prompt[:50]}...")
-            result = generate_oracle_sql(prompt=prompt, schema_hint=payload.scope, api_key=openai_api_key)
+            result = generate_oracle_sql(
+                prompt=prompt,
+                schema_hint=payload.scope,
+                api_key=openai_api_key,
+                kb_context=_format_kb_context(payload.kb_entries),
+            )
             sql = result.sql
             logger.info(f"Generated SQL: {sql[:100]}...")
         except LlmError as exc:

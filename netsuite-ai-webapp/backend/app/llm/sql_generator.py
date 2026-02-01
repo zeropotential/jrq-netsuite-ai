@@ -60,6 +60,7 @@ def generate_oracle_sql(
     schema_hint: str | None = None,
     max_tokens: int = 2048,
     api_key: str | None = None,
+    kb_context: str | None = None,
 ) -> SqlGenerationResult:
     if settings.llm_provider.lower() != "openai":
         raise LlmError("Unsupported LLM provider")
@@ -150,8 +151,10 @@ def generate_oracle_sql(
     # Use the full schema from the Excel file, or fall back to provided hint
     schema = schema_hint if schema_hint else NETSUITE_SCHEMA
 
+    kb_text = f"\n\n{kb_context}\n" if kb_context else ""
     user = (
         f"{schema}\n\n"
+        f"{kb_text}"
         f"User request: {prompt}\n\n"
         "Generate a SuiteAnalytics Connect SQL query. No semicolon at the end."
     )

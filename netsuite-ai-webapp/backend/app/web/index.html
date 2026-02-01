@@ -182,6 +182,30 @@
       .chat-only .footer {
         display: none !important;
       }
+      .kb-card {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px;
+        background: var(--card);
+        margin-top: 12px;
+      }
+      .kb-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .kb-item {
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #fff;
+      }
+      .kb-item small {
+        color: var(--muted);
+        display: block;
+        margin-top: 6px;
+      }
       label {
         display: flex;
         flex-direction: column;
@@ -368,10 +392,10 @@
           NetSuite AI
         </div>
         <div class="nav">
-          <div class="nav-item active">Chat Workspace</div>
-          <div class="nav-item">Reports</div>
-          <div class="nav-item">Connections</div>
-          <div class="nav-item">Knowledge Base</div>
+          <div class="nav-item active" data-view="chat">Chat Workspace</div>
+          <div class="nav-item" data-view="reports">Reports</div>
+          <div class="nav-item" data-view="connections">Connections</div>
+          <div class="nav-item" data-view="kb">Knowledge Base</div>
           <div class="nav-section">Recent</div>
           <div class="nav-item">Revenue Insights</div>
           <div class="nav-item">AP Aging</div>
@@ -381,13 +405,13 @@
       <main class="main">
         <div class="topbar">
           <div>
-            <h1>Chat Workspace</h1>
-            <div class="badge">General assistant</div>
+            <h1 id="viewTitle">Chat Workspace</h1>
+            <div class="badge" id="viewBadge">General assistant</div>
           </div>
           <div class="badge">NetSuite SuiteAnalytics</div>
         </div>
 
-        <section class="panel">
+        <section class="panel" id="chatView">
           <div class="inputs">
             <label>
               JDBC Connection ID
@@ -424,6 +448,27 @@
           </div>
           <div class="chat" id="report"></div>
         </section>
+
+        <section class="panel hidden" id="kbView">
+          <h3 style="margin:0 0 6px 0;">Knowledge Base</h3>
+          <p class="footer" style="margin-top:0;">Add notes your assistant can reference. This is stored locally in the browser for now.</p>
+          <div class="kb-card">
+            <label>
+              Title
+              <input id="kbTitle" placeholder="e.g., Revenue Recognition Policy" />
+            </label>
+            <label>
+              Content
+              <textarea id="kbContent" placeholder="Paste your guidance, SOPs, or domain knowledge..."></textarea>
+            </label>
+            <div class="actions" style="margin-top:8px;">
+              <button id="kbAddBtn">Add to Knowledge Base</button>
+              <button id="kbClearBtn" class="btn-secondary">Clear All</button>
+              <span id="kbStatus" class="footer"></span>
+            </div>
+          </div>
+          <div class="kb-list" id="kbList"></div>
+        </section>
       </main>
     </div>
 
@@ -444,6 +489,16 @@
       const loginStatus = document.getElementById("loginStatus");
       const loginConnectionId = document.getElementById("loginConnectionId");
       const loginOpenaiKey = document.getElementById("loginOpenaiKey");
+      const chatView = document.getElementById("chatView");
+      const kbView = document.getElementById("kbView");
+      const viewTitle = document.getElementById("viewTitle");
+      const viewBadge = document.getElementById("viewBadge");
+      const kbTitle = document.getElementById("kbTitle");
+      const kbContent = document.getElementById("kbContent");
+      const kbAddBtn = document.getElementById("kbAddBtn");
+      const kbClearBtn = document.getElementById("kbClearBtn");
+      const kbList = document.getElementById("kbList");
+      const kbStatus = document.getElementById("kbStatus");
       const loginConnectionError = document.getElementById("loginConnectionError");
       const loginOpenaiError = document.getElementById("loginOpenaiError");
       const connectionError = document.getElementById("connectionError");
@@ -451,6 +506,92 @@
 
       // Session-based chat history (clears on page refresh)
       let chatHistory = [];
+      let kbItems = [];
+
+      const loadKb = () => {
+        try {
+          const stored = localStorage.getItem("netsuite_kb_items");
+          kbItems = stored ? JSON.parse(stored) : [];
+        } catch {
+          kbItems = [];
+        }
+        renderKb();
+      };
+
+      const saveKb = () => {
+        localStorage.setItem("netsuite_kb_items", JSON.stringify(kbItems));
+      };
+
+      const renderKb = () => {
+        kbList.innerHTML = "";
+        if (!kbItems.length) {
+          const empty = document.createElement("div");
+          empty.className = "kb-item";
+          empty.textContent = "No knowledge base entries yet.";
+          kbList.appendChild(empty);
+          return;
+        }
+        kbItems.forEach((item) => {
+          const div = document.createElement("div");
+          div.className = "kb-item";
+          div.innerHTML = `<strong>${item.title}</strong><div>${item.content}</div><small>${new Date(item.createdAt).toLocaleString()}</small>`;
+          kbList.appendChild(div);
+        });
+      };
+
+      const setView = (view) => {
+        document.querySelectorAll(".nav-item").forEach((el) => {
+          el.classList.toggle("active", el.dataset.view === view);
+        });
+        if (view === "kb") {
+          chatView.classList.add("hidden");
+          kbView.classList.remove("hidden");
+          viewTitle.textContent = "Knowledge Base";
+          viewBadge.textContent = "Notes & Context";
+          loadKb();
+        } else {
+          chatView.classList.remove("hidden");
+          kbView.classList.add("hidden");
+          viewTitle.textContent = "Chat Workspace";
+          viewBadge.textContent = "General assistant";
+        }
+      };
+
+      document.querySelectorAll(".nav-item").forEach((el) => {
+        el.addEventListener("click", () => {
+          const view = el.dataset.view || "chat";
+          setView(view);
+        });
+      });
+
+      kbAddBtn?.addEventListener("click", () => {
+        kbStatus.textContent = "";
+        const title = kbTitle.value.trim();
+        const content = kbContent.value.trim();
+        if (!title || !content) {
+          kbStatus.textContent = "Title and content are required.";
+          return;
+        }
+        kbItems.unshift({
+          title,
+          content,
+          createdAt: new Date().toISOString(),
+        });
+        saveKb();
+        renderKb();
+        kbTitle.value = "";
+        kbContent.value = "";
+        kbStatus.textContent = "Added.";
+        setTimeout(() => (kbStatus.textContent = ""), 1500);
+      });
+
+      kbClearBtn?.addEventListener("click", () => {
+        kbItems = [];
+        saveKb();
+        renderKb();
+        kbStatus.textContent = "Cleared.";
+        setTimeout(() => (kbStatus.textContent = ""), 1500);
+      });
 
       const clearErrors = () => {
         loginStatus.textContent = "";
@@ -507,6 +648,7 @@
         appEl.classList.remove("hidden");
         // Chat-only view
         document.body.classList.add("chat-only");
+        setView("chat");
       };
 
       loginBtn.addEventListener("click", applyLogin);
@@ -716,6 +858,10 @@
               connection_id: payload.connection_id,
               scope: payload.schema_hint,
               history: chatHistory,
+              kb_entries: (kbItems || []).slice(0, 20).map((item) => ({
+                title: item.title,
+                content: item.content,
+              })),
             }),
           });
           
