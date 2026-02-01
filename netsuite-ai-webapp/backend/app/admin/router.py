@@ -174,6 +174,58 @@ def discover_database_schema(
         raise HTTPException(status_code=500, detail=f"Schema discovery failed: {exc}") from exc
 
 
+class SchemaCacheStatusResponse(BaseModel):
+    cached: bool
+    table_count: int
+    tables: list[str]
+    cache_age_seconds: float | None
+    expires_in_seconds: float | None
+
+
+@router.get("/jdbc-connections/{connection_id}/schema-cache", response_model=SchemaCacheStatusResponse)
+def get_schema_cache_status(connection_id: str) -> SchemaCacheStatusResponse:
+    """
+    Check if schema is cached for a connection.
+    
+    Returns cache status including:
+    - cached: whether schema exists in cache
+    - table_count: number of tables cached
+    - tables: list of cached table names
+    - cache_age_seconds: how old the cache is
+    - expires_in_seconds: when cache will expire (TTL is 1 hour)
+    """
+    import time
+    from app.netsuite.schema_discovery import SCHEMA_CACHE_TTL, _schema_cache, _cache_lock
+    
+    cached = get_cached_schema(connection_id)
+    
+    if cached is None:
+        return SchemaCacheStatusResponse(
+            cached=False,
+            table_count=0,
+            tables=[],
+            cache_age_seconds=None,
+            expires_in_seconds=None
+        )
+    
+    with _cache_lock:
+        cache_entry = _schema_cache.get(connection_id)
+        if cache_entry:
+            age = time.time() - cache_entry.fetched_at
+            expires_in = max(0, SCHEMA_CACHE_TTL - age)
+        else:
+            age = None
+            expires_in = None
+    
+    return SchemaCacheStatusResponse(
+        cached=True,
+        table_count=len(cached),
+        tables=sorted(cached.keys())[:100],
+        cache_age_seconds=round(age, 1) if age is not None else None,
+        expires_in_seconds=round(expires_in, 1) if expires_in is not None else None
+    )
+
+
 @router.delete("/jdbc-connections/{connection_id}/schema-cache")
 def clear_connection_schema_cache(connection_id: str) -> dict:
     """Clear the cached schema for a specific connection."""
