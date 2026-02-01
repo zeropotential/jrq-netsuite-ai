@@ -337,6 +337,8 @@ def chat(
                 schema_hint=payload.scope,
                 api_key=openai_api_key,
                 kb_context=_format_kb_context(payload.kb_entries),
+                db=db,
+                connection_id=payload.connection_id,
             )
             sql = result.sql
             logger.info(f"Generated SQL: {sql[:100]}...")

@@ -5,11 +5,15 @@ import logging
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from openai import OpenAI
 
 from app.core.config import settings
 from app.llm.netsuite_schema import NETSUITE_SCHEMA
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +68,37 @@ def _load_markdown_schema() -> str | None:
     return f"MARKDOWN SCHEMA REFERENCE:\n{content}"
 
 
+def _load_live_schema(db: "Session", connection_id: str) -> str | None:
+    """
+    Load live schema from OA_TABLES and OA_COLUMNS via JDBC.
+    This fetches the actual database schema and caches it.
+    """
+    try:
+        from app.netsuite.schema_discovery import (
+            discover_schema,
+            schema_to_llm_context,
+            get_cached_schema
+        )
+        
+        # Try to get cached schema first
+        cached = get_cached_schema(connection_id)
+        if cached:
+            logger.debug("Using cached live schema for connection %s", connection_id)
+            return schema_to_llm_context(cached)
+        
+        # Discover schema (will be cached automatically)
+        tables = discover_schema(db, connection_id)
+        if tables:
+            schema_text = schema_to_llm_context(tables)
+            logger.info(f"Loaded live schema: {len(tables)} tables")
+            return schema_text
+        
+        return None
+    except Exception as exc:
+        logger.warning("Failed to load live schema: %s", exc)
+        return None
+
+
 @dataclass(frozen=True)
 class SqlGenerationResult:
     sql: str
@@ -110,11 +145,35 @@ def generate_oracle_sql(
     max_tokens: int = 2048,
     api_key: str | None = None,
     kb_context: str | None = None,
+    db: "Session | None" = None,
+    connection_id: str | None = None,
 ) -> SqlGenerationResult:
+    """
+    Generate SuiteAnalytics Connect SQL from a natural language prompt.
+    
+    Args:
+        prompt: Natural language description of the query
+        schema_hint: Optional additional schema context
+        max_tokens: Maximum tokens for LLM response
+        api_key: Optional OpenAI API key override
+        kb_context: Optional knowledge base context
+        db: Optional database session for live schema discovery
+        connection_id: Optional JDBC connection ID for live schema discovery
+    
+    Returns:
+        SqlGenerationResult with generated SQL and model used
+    """
     if settings.llm_provider.lower() != "openai":
         raise LlmError("Unsupported LLM provider")
 
     client = _require_openai_client(api_key)
+    
+    # Try to load live schema from database if connection provided
+    live_schema: str | None = None
+    if db is not None and connection_id:
+        live_schema = _load_live_schema(db, connection_id)
+        if live_schema:
+            logger.info("Using live schema from OA_TABLES/OA_COLUMNS")
 
     # Build system messages for SuiteAnalytics Connect SQL expert
     system_messages = [
@@ -124,7 +183,7 @@ def generate_oracle_sql(
         },
         {
             "type": "text",
-            "text": "SCHEMA RESTRICTION: You MUST ONLY use tables and columns listed in the MARKDOWN SCHEMA REFERENCE provided below. This schema documents the exact table names, column names, data types, and foreign key relationships. Use these exact names (case-sensitive)."
+            "text": "SCHEMA RESTRICTION: You MUST ONLY use tables and columns listed in the schema references provided below. Use the LIVE DATABASE SCHEMA as the primary reference if available, supplemented by the MARKDOWN SCHEMA REFERENCE. Use exact table/column names (case-sensitive)."
         },
         {
             "type": "text",
@@ -231,11 +290,28 @@ def generate_oracle_sql(
     # Combine all system text into one system message
     system_content = "\n\n".join([msg["text"] for msg in system_messages])
 
-    # Use CSV allowed schema if present, else fall back
+    # Build schema context with priority: live schema > CSV schema > markdown schema > fallback
+    schema_parts = []
+    
+    # 1. Live schema from OA_TABLES/OA_COLUMNS (highest priority - actual database)
+    if live_schema:
+        schema_parts.append(live_schema)
+    
+    # 2. CSV allowed schema (curated list)
     allowed_schema = _load_allowed_schema()
+    if allowed_schema:
+        schema_parts.append(allowed_schema)
+    
+    # 3. Markdown schema reference (detailed documentation)
     md_schema = _load_markdown_schema()
-    base_schema = allowed_schema or NETSUITE_SCHEMA
-    schema = "\n\n".join(part for part in [base_schema, md_schema] if part)
+    if md_schema:
+        schema_parts.append(md_schema)
+    
+    # 4. Fallback to hardcoded schema if nothing else available
+    if not schema_parts:
+        schema_parts.append(NETSUITE_SCHEMA)
+    
+    schema = "\n\n".join(schema_parts)
 
     kb_text = f"\n\n{kb_context}\n" if kb_context else ""
     schema_hint_text = f"\n\nSCHEMA HINT:\n{schema_hint}" if schema_hint else ""

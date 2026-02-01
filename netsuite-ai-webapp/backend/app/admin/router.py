@@ -8,6 +8,12 @@ from app.db.models.netsuite import NetSuiteJdbcConnection
 from app.db.models.secret import Secret
 from app.db.session import get_db
 from app.netsuite.jdbc import JdbcError, test_connection
+from app.netsuite.schema_discovery import (
+    discover_schema,
+    clear_schema_cache,
+    get_cached_schema,
+    schema_to_llm_context,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -87,3 +93,69 @@ def test_jdbc_connection(connection_id: str, db: Session = Depends(get_db)) -> d
         return test_connection(db, connection_id)
     except JdbcError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class SchemaDiscoveryRequest(BaseModel):
+    force_refresh: bool = False
+    table_filter: list[str] | None = None
+
+
+class SchemaDiscoveryResponse(BaseModel):
+    table_count: int
+    tables: list[str]
+    cached: bool
+    llm_context_preview: str
+
+
+@router.post("/jdbc-connections/{connection_id}/discover-schema", response_model=SchemaDiscoveryResponse)
+def discover_database_schema(
+    connection_id: str,
+    payload: SchemaDiscoveryRequest | None = None,
+    db: Session = Depends(get_db)
+) -> SchemaDiscoveryResponse:
+    """
+    Discover and cache the database schema from OA_TABLES and OA_COLUMNS.
+    This schema will be used by the LLM for SQL generation.
+    """
+    payload = payload or SchemaDiscoveryRequest()
+    
+    try:
+        # Check if we already have cached schema
+        was_cached = get_cached_schema(connection_id) is not None
+        
+        # Discover schema
+        tables = discover_schema(
+            db,
+            connection_id,
+            force_refresh=payload.force_refresh,
+            table_filter=payload.table_filter
+        )
+        
+        # Generate LLM context preview (truncated)
+        llm_context = schema_to_llm_context(tables, max_tables=10)
+        preview = llm_context[:2000] + "..." if len(llm_context) > 2000 else llm_context
+        
+        return SchemaDiscoveryResponse(
+            table_count=len(tables),
+            tables=sorted(tables.keys())[:100],  # First 100 table names
+            cached=was_cached and not payload.force_refresh,
+            llm_context_preview=preview
+        )
+    except JdbcError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Schema discovery failed: {exc}") from exc
+
+
+@router.delete("/jdbc-connections/{connection_id}/schema-cache")
+def clear_connection_schema_cache(connection_id: str) -> dict:
+    """Clear the cached schema for a specific connection."""
+    clear_schema_cache(connection_id)
+    return {"status": "ok", "message": f"Schema cache cleared for connection {connection_id}"}
+
+
+@router.delete("/schema-cache")
+def clear_all_schema_cache() -> dict:
+    """Clear all cached schemas."""
+    clear_schema_cache()
+    return {"status": "ok", "message": "All schema caches cleared"}
