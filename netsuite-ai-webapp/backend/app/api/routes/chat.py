@@ -1,3 +1,4 @@
+import json
 import logging
 import traceback
 
@@ -110,11 +111,10 @@ def _generate_html_visualization(
     sql: str,
 ) -> str:
     """Generate HTML visualization (charts, tables, graphs) from query results using LLM."""
-    # Limit data for context window
-    sample_rows = rows[:100]  # Max 100 rows for visualization
+    # Limit data for context window - keep it small to avoid timeouts
+    sample_rows = rows[:50]  # Max 50 rows for visualization
     
     # Format data as JSON for the LLM
-    import json
     data_json = json.dumps({"columns": columns, "rows": sample_rows}, default=str)
     
     messages = [
@@ -163,7 +163,8 @@ Generate an HTML visualization dashboard for this data."""
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=messages,
-        **_get_completion_kwargs(8192, temperature=0.3),
+        timeout=60.0,  # 60 second timeout for visualization
+        **_get_completion_kwargs(4096, temperature=0.3),  # Reduced token limit
     )
     
     html = (response.choices[0].message.content or "").strip()
