@@ -46,7 +46,7 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER}
       OPENAI_MODEL: ${OPENAI_MODEL}
       # Database security settings
-      DB_SSL_MODE: ${DB_SSL_MODE:-prefer}
+      DB_SSL_MODE: ${DB_SSL_MODE:-disable}
     depends_on:
       postgres:
         condition: service_healthy

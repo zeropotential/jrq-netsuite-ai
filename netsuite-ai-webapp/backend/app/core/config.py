@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     db_pool_size: int = 5  # Maximum connections in pool
     db_max_overflow: int = 10  # Additional connections allowed
     db_pool_timeout: int = 30  # Seconds to wait for connection
-    db_ssl_mode: str = "prefer"  # require, verify-ca, verify-full for production
+    db_ssl_mode: str = "disable"  # disable for internal Docker network, require for external
 
     # Secret encryption (envelope encryption KEK; base64 for 32-byte AES-256 key)
     app_key_id: str = "v1"
