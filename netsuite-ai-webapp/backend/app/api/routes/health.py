@@ -147,3 +147,48 @@ def _check_openai_health(api_key: str | None) -> OpenAiConnectionInfo:
             status="error",
             error=f"Connection error: {str(e)[:100]}"
         )
+
+
+class SchemaInfoResponse(BaseModel):
+    markdown_schema_loaded: bool
+    markdown_schema_tables: list[str]
+    markdown_schema_size: int
+    csv_schema_loaded: bool
+    csv_schema_tables: int
+
+
+@router.get("/api/schema/info", response_model=SchemaInfoResponse)
+def get_schema_info() -> SchemaInfoResponse:
+    """
+    Get info about loaded schema references (no JDBC required).
+    This shows what schema the LLM will use for SQL generation.
+    """
+    from app.llm.sql_generator import _load_markdown_schema, _load_allowed_schema
+    
+    # Check markdown schema
+    md_schema = _load_markdown_schema()
+    md_loaded = md_schema is not None
+    md_size = len(md_schema) if md_schema else 0
+    
+    # Extract table names from markdown (look for "# TableName" or "## TableName")
+    md_tables = []
+    if md_schema:
+        import re
+        # Match headers like "# Transactions" or "## Transaction_lines"
+        matches = re.findall(r'^#+ ([A-Z][A-Za-z_]+)\s*$', md_schema, re.MULTILINE)
+        md_tables = list(set(matches))
+    
+    # Check CSV schema
+    csv_schema = _load_allowed_schema()
+    csv_loaded = csv_schema is not None
+    csv_tables = 0
+    if csv_schema:
+        csv_tables = csv_schema.count("\n- ")  # Count table entries
+    
+    return SchemaInfoResponse(
+        markdown_schema_loaded=md_loaded,
+        markdown_schema_tables=sorted(md_tables),
+        markdown_schema_size=md_size,
+        csv_schema_loaded=csv_loaded,
+        csv_schema_tables=csv_tables
+    )
