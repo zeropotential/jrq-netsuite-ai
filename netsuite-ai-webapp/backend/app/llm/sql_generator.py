@@ -78,8 +78,8 @@ def generate_oracle_sql(
                 "CORE DIALECT RULES (MANDATORY):\n"
                 "1. Use SuiteAnalytics Connect SQL only. Do not use Oracle, Postgres, or MySQL syntax.\n"
                 "2. Use TOP n to limit results. Never use ROWNUM, LIMIT, or OFFSET.\n"
-                "3. ORDER BY is allowed only in the outermost query. ORDER BY inside subqueries or derived tables is invalid unless TOP is also specified.\n"
-                "4. Prefer a single-level SELECT with TOP + ORDER BY for top-N queries.\n"
+                "3. ORDER BY is allowed only in the outermost query. ORDER BY inside subqueries or derived tables is invalid unless TOP is also specified in that same SELECT.\n"
+                "4. Prefer a single-level SELECT with TOP + ORDER BY for top-N queries. Avoid wrapping queries just to apply limits.\n"
                 "5. Use explicit JOIN syntax only. Never use implicit joins."
             )
         },
@@ -113,7 +113,8 @@ def generate_oracle_sql(
                 "- ORDER BY inside subqueries without TOP\n"
                 "- Implicit joins\n"
                 "- Invalid or non-existent JDBC columns\n"
-                "- Aggregation without TL.MAINLINE = 'F'"
+                "- Aggregation without TL.MAINLINE = 'F'\n"
+                "- Wrapping a query solely to apply ORDER BY or limits"
             )
         },
         {

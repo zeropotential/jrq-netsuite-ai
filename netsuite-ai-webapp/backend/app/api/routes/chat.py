@@ -239,16 +239,8 @@ def chat(
     # Always strip trailing semicolon (not valid for NetSuite JDBC)
     sql = sql.rstrip(';').strip()
 
-    lowered = sql.lower()
-    # Only add ROWNUM limit if no limit clause and not an aggregate-only query
-    has_limit = "rownum" in lowered or " limit " in lowered or " fetch first " in lowered
-    is_aggregate_only = (
-        ("count(" in lowered or "sum(" in lowered or "avg(" in lowered or "max(" in lowered or "min(" in lowered)
-        and "group by" not in lowered
-    )
-    if not has_limit and not is_aggregate_only:
-        # Wrap query with ROWNUM for SQL-92 compatibility
-        sql = f"SELECT * FROM ({sql}) WHERE ROWNUM <= {settings.netsuite_jdbc_row_limit}"
+    # Do not auto-wrap or limit SQL here. SuiteAnalytics requires TOP in the same
+    # SELECT as ORDER BY, and wrapping can invalidate queries.
 
     try:
         logger.info(f"Executing SQL: {sql[:100]}...")
