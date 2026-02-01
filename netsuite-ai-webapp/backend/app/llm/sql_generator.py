@@ -37,11 +37,16 @@ def _load_allowed_schema() -> str | None:
                 continue
             table_map.setdefault(table, set()).add(field)
 
-    lines = ["ALLOWED TABLES AND COLUMNS (ONLY USE THESE):"]
+    # Build compact schema representation
+    lines = ["ALLOWED TABLES AND COLUMNS:"]
     for table in sorted(table_map):
         cols = ", ".join(sorted(table_map[table]))
-        lines.append(f"{table}:\n  {cols}")
-    return "\n".join(lines)
+        lines.append(f"- {table}: {cols}")
+    
+    schema_text = "\n".join(lines)
+    logger.info(f"Loaded allowed schema: {len(table_map)} tables, {len(schema_text)} chars")
+    
+    return schema_text
 
 
 @dataclass(frozen=True)
@@ -207,6 +212,16 @@ def generate_oracle_sql(
     logger.info(f"SQL generation response: finish_reason={response.choices[0].finish_reason}")
     
     content = (response.choices[0].message.content or "").strip()
+    
+    # Clean up markdown code fences if present
+    if content.startswith("```sql"):
+        content = content[6:]
+    if content.startswith("```"):
+        content = content[3:]
+    if content.endswith("```"):
+        content = content[:-3]
+    content = content.strip()
+    
     if not content:
         # Log more details for debugging
         logger.error(f"LLM returned empty response. Model: {settings.openai_model}, "
