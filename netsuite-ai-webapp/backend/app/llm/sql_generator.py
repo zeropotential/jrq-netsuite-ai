@@ -49,6 +49,21 @@ def _load_allowed_schema() -> str | None:
     return schema_text
 
 
+@lru_cache
+def _load_markdown_schema() -> str | None:
+    md_path = Path(__file__).resolve().parent / "schema.md"
+    if not md_path.exists():
+        return None
+    try:
+        content = md_path.read_text(encoding="utf-8").strip()
+    except Exception as exc:
+        logger.warning("Failed to read markdown schema: %s", exc)
+        return None
+    if not content:
+        return None
+    return f"MARKDOWN SCHEMA REFERENCE:\n{content}"
+
+
 @dataclass(frozen=True)
 class SqlGenerationResult:
     sql: str
@@ -109,7 +124,16 @@ def generate_oracle_sql(
         },
         {
             "type": "text",
-            "text": "SCHEMA RESTRICTION: You MUST ONLY use tables and columns listed in the allowed schema below. Do not use any other tables or columns."
+            "text": "SCHEMA RESTRICTION: You MUST ONLY use tables and columns listed in the MARKDOWN SCHEMA REFERENCE provided below. This schema documents the exact table names, column names, data types, and foreign key relationships. Use these exact names (case-sensitive)."
+        },
+        {
+            "type": "text",
+            "text": (
+                "KEY TABLES FROM SCHEMA:\n"
+                "- Transactions: Main transaction header table (PK: transaction_id). Contains dates, entity, status, memo, etc.\n"
+                "- Transaction_lines: Line-level details (composite PK: transaction_id + transaction_line_id). Contains amounts, quantities, accounts, items.\n"
+                "- Always JOIN these tables on: Transactions.transaction_id = Transaction_lines.transaction_id"
+            )
         },
         {
             "type": "text",
@@ -126,11 +150,13 @@ def generate_oracle_sql(
             "type": "text",
             "text": (
                 "TRANSACTION AND LINE RULES:\n"
-                "1. When querying TRANSACTIONLINE, always include TL.MAINLINE = 'F'.\n"
-                "2. Never aggregate TRANSACTIONLINE data without filtering MAINLINE.\n"
-                "3. If T.POSTING = 'T' is used, only include posting transaction types (e.g., Invoice, Cash Sale). Do not include non-posting types such as Sales Order unless explicitly required.\n"
-                "4. Use valid JDBC columns only. Do not invent or assume columns.\n"
-                "5. Invalid example: TL.AMOUNT. Valid examples: TL.NETAMOUNT, TL.FOREIGNAMOUNT, TL.QUANTITY, TL.RATE."
+                "1. The main transaction table is 'Transactions' (primary key: transaction_id).\n"
+                "2. The line-level detail table is 'Transaction_lines' (composite PK: transaction_id + transaction_line_id).\n"
+                "3. JOIN Transactions T to Transaction_lines TL using: T.transaction_id = TL.transaction_id.\n"
+                "4. Credit/debit amounts and quantities are in Transaction_lines, NOT in Transactions.\n"
+                "5. Use valid SuiteAnalytics Connect JDBC column names only (e.g., TL.amount, TL.net_amount, TL.item_count, TL.quantity_committed).\n"
+                "6. When filtering posting transactions, use T.is_non_posting = 'No' (VARCHAR2 'Yes'/'No').\n"
+                "7. Use TL.non_posting_line = 'No' to filter out non-posting lines if needed."
             )
         },
         {
@@ -140,8 +166,9 @@ def generate_oracle_sql(
                 "1. Use TO_DATE('YYYY-MM-DD','YYYY-MM-DD') for date comparisons.\n"
                 "2. Use COALESCE() for null handling.\n"
                 "3. Every non-aggregated column in SELECT must appear in GROUP BY.\n"
-                "4. Prefer TL.NETAMOUNT for revenue calculations.\n"
-                "5. Always use table aliases and fully qualify column references."
+                "4. For revenue/amounts, prefer TL.amount or TL.net_amount from Transaction_lines.\n"
+                "5. Always use table aliases and fully qualify column references.\n"
+                "6. Transaction date is T.trandate; created date is T.create_date."
             )
         },
         {
@@ -152,8 +179,8 @@ def generate_oracle_sql(
                 "- ORDER BY inside subqueries without TOP\n"
                 "- Implicit joins\n"
                 "- Invalid or non-existent JDBC columns\n"
-                "- Aggregation without TL.MAINLINE = 'F'\n"
-                "- Wrapping a query solely to apply ORDER BY or limits"
+                "- Wrapping a query solely to apply ORDER BY or limits\n"
+                "- Using columns that don't exist in the schema (always verify against MARKDOWN SCHEMA REFERENCE)"
             )
         },
         {
@@ -164,10 +191,10 @@ def generate_oracle_sql(
                 "- No ROWNUM, LIMIT, or OFFSET is used\n"
                 "- ORDER BY appears only in the outermost query\n"
                 "- TOP n is used when returning limited ordered results\n"
-                "- TL.MAINLINE = 'F' is present when TRANSACTIONLINE is used\n"
-                "- Only valid SuiteAnalytics JDBC columns are referenced\n"
+                "- Only columns from the MARKDOWN SCHEMA REFERENCE are used\n"
                 "- All GROUP BY rules are satisfied\n"
-                "- Transaction posting logic is consistent with T.POSTING usage\n"
+                "- JOINs use correct foreign key relationships from schema\n"
+                "- Table names match exactly: Transactions, Transaction_lines (case-sensitive)\n"
                 "If any rule is violated, revise the SQL until all checks pass."
             )
         },
@@ -188,7 +215,9 @@ def generate_oracle_sql(
 
     # Use CSV allowed schema if present, else fall back
     allowed_schema = _load_allowed_schema()
-    schema = allowed_schema or NETSUITE_SCHEMA
+    md_schema = _load_markdown_schema()
+    base_schema = allowed_schema or NETSUITE_SCHEMA
+    schema = "\n\n".join(part for part in [base_schema, md_schema] if part)
 
     kb_text = f"\n\n{kb_context}\n" if kb_context else ""
     schema_hint_text = f"\n\nSCHEMA HINT:\n{schema_hint}" if schema_hint else ""
