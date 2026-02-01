@@ -63,11 +63,20 @@ def _is_cache_valid(cache: SchemaCache | None) -> bool:
     return (time.time() - cache.fetched_at) < SCHEMA_CACHE_TTL
 
 
-def fetch_tables(db: Session, connection_id: str) -> list[dict[str, Any]]:
-    """Fetch all tables from OA_TABLES system table."""
+def fetch_tables(db: Session, connection_id: str, table_filter: list[str] | None = None) -> list[dict[str, Any]]:
+    """Fetch tables from OA_TABLES system table, optionally filtered by name."""
     logger.info("Fetching tables from OA_TABLES...")
     try:
-        result = run_query(db, connection_id, "SELECT * FROM OA_TABLES", limit=5000)
+        if table_filter:
+            # Build IN clause with escaped table names
+            safe_names = [f"'{name.replace(chr(39), chr(39)+chr(39))}'" for name in table_filter]
+            in_clause = ", ".join(safe_names)
+            sql = f"SELECT * FROM OA_TABLES WHERE TABLE_NAME IN ({in_clause})"
+            logger.info(f"Querying OA_TABLES with filter: {table_filter}")
+        else:
+            sql = "SELECT * FROM OA_TABLES"
+        
+        result = run_query(db, connection_id, sql, limit=5000)
         rows = result.get("rows", [])
         columns = result.get("columns", [])
         
@@ -86,19 +95,22 @@ def fetch_tables(db: Session, connection_id: str) -> list[dict[str, Any]]:
 
 def fetch_columns_for_tables(db: Session, connection_id: str, table_names: list[str]) -> dict[str, list[dict[str, Any]]]:
     """
-    Fetch columns for multiple tables in a SINGLE query.
-    This is much faster than querying each table individually.
+    Fetch columns for multiple tables.
+    
+    First tries a single IN clause query for efficiency.
+    If that fails/times out, falls back to individual table queries.
     """
     if not table_names:
         return {}
     
+    # Try batch query first (faster if it works)
     try:
         # Build IN clause with escaped table names
         safe_names = [f"'{name.replace(chr(39), chr(39)+chr(39))}'" for name in table_names]
         in_clause = ", ".join(safe_names)
         sql = f"SELECT * FROM OA_COLUMNS WHERE TABLE_NAME IN ({in_clause})"
         
-        logger.info(f"Fetching columns for {len(table_names)} tables in single query...")
+        logger.info(f"Fetching columns for {len(table_names)} tables in batch query...")
         result = run_query(db, connection_id, sql, limit=10000)
         rows = result.get("rows", [])
         columns = result.get("columns", [])
@@ -111,11 +123,25 @@ def fetch_columns_for_tables(db: Session, connection_id: str, table_names: list[
             if table_name:
                 table_columns.setdefault(table_name, []).append(col_dict)
         
-        logger.info(f"Fetched columns for {len(table_columns)} tables")
+        logger.info(f"Batch query returned columns for {len(table_columns)} tables")
         return table_columns
+        
     except JdbcError as e:
-        logger.error(f"Failed to fetch columns: {e}")
-        return {}
+        logger.warning(f"Batch column query failed: {e}. Trying individual tables...")
+        
+        # Fall back to individual table queries
+        table_columns: dict[str, list[dict[str, Any]]] = {}
+        for table_name in table_names:
+            try:
+                cols = fetch_columns_for_table(db, connection_id, table_name)
+                if cols:
+                    table_columns[table_name] = cols
+                    logger.info(f"Fetched {len(cols)} columns for {table_name}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch columns for {table_name}: {e}")
+                # Continue with other tables
+        
+        return table_columns
 
 
 def fetch_columns_for_table(db: Session, connection_id: str, table_name: str) -> list[dict[str, Any]]:
@@ -175,9 +201,10 @@ def discover_schema(
     
     # Get table names to process
     if table_filter:
-        # Use the filter directly - preserve case as NetSuite is case-sensitive
-        table_names_to_process = list(table_filter)
-        logger.info(f"Using table filter: {len(table_names_to_process)} tables")
+        # Fetch only the filtered tables from OA_TABLES
+        tables_data = fetch_tables(db, connection_id, table_filter=table_filter)
+        table_names_to_process = [t.get("TABLE_NAME", "") for t in tables_data if t.get("TABLE_NAME")]
+        logger.info(f"Using table filter: requested {len(table_filter)}, found {len(table_names_to_process)} tables in OA_TABLES")
     else:
         # Fetch all tables from OA_TABLES
         tables_data = fetch_tables(db, connection_id)

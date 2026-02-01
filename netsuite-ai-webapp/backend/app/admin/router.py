@@ -99,6 +99,7 @@ class SchemaDiscoveryRequest(BaseModel):
     force_refresh: bool = False
     table_filter: list[str] | None = None
     transaction_tables_only: bool = True  # Default to just transaction tables for speed
+    quick_mode: bool = False  # Just check if tables exist, don't fetch all columns
 
 
 # Default tables to fetch (transaction-focused for common queries)
@@ -106,17 +107,8 @@ class SchemaDiscoveryRequest(BaseModel):
 DEFAULT_TRANSACTION_TABLES = [
     "Transactions",
     "Transaction_lines", 
-    "Transaction_links",
     "Accounts",
-    "Items",
-    "Entity",
-    "Subsidiaries",
-    "Departments",
-    "Classes",
-    "Locations",
     "Customers",
-    "Vendors",
-    "Employees",
 ]
 
 
@@ -125,6 +117,56 @@ class SchemaDiscoveryResponse(BaseModel):
     tables: list[str]
     cached: bool
     llm_context_preview: str
+
+
+class SchemaTestResponse(BaseModel):
+    status: str
+    oa_tables_accessible: bool
+    sample_tables: list[str]
+    error: str | None = None
+
+
+@router.get("/jdbc-connections/{connection_id}/schema-test", response_model=SchemaTestResponse)
+def test_schema_access(
+    connection_id: str,
+    db: Session = Depends(get_db)
+) -> SchemaTestResponse:
+    """
+    Quick test to verify OA_TABLES is accessible.
+    Much faster than full discovery - just fetches a few table names.
+    """
+    from app.netsuite.jdbc import run_query
+    
+    try:
+        # Just fetch first 10 table names - quick sanity check
+        result = run_query(
+            db, 
+            connection_id, 
+            "SELECT TABLE_NAME FROM OA_TABLES WHERE ROWNUM <= 10",
+            limit=10
+        )
+        rows = result.get("rows", [])
+        tables = [row[0] for row in rows if row]
+        
+        return SchemaTestResponse(
+            status="ok",
+            oa_tables_accessible=True,
+            sample_tables=tables
+        )
+    except JdbcError as exc:
+        return SchemaTestResponse(
+            status="error",
+            oa_tables_accessible=False,
+            sample_tables=[],
+            error=str(exc)
+        )
+    except Exception as exc:
+        return SchemaTestResponse(
+            status="error",
+            oa_tables_accessible=False,
+            sample_tables=[],
+            error=f"Unexpected error: {exc}"
+        )
 
 
 @router.post("/jdbc-connections/{connection_id}/discover-schema", response_model=SchemaDiscoveryResponse)
