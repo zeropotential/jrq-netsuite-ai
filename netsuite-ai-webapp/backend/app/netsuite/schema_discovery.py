@@ -84,6 +84,40 @@ def fetch_tables(db: Session, connection_id: str) -> list[dict[str, Any]]:
         raise
 
 
+def fetch_columns_for_tables(db: Session, connection_id: str, table_names: list[str]) -> dict[str, list[dict[str, Any]]]:
+    """
+    Fetch columns for multiple tables in a SINGLE query.
+    This is much faster than querying each table individually.
+    """
+    if not table_names:
+        return {}
+    
+    try:
+        # Build IN clause with escaped table names
+        safe_names = [f"'{name.replace(chr(39), chr(39)+chr(39))}'" for name in table_names]
+        in_clause = ", ".join(safe_names)
+        sql = f"SELECT * FROM OA_COLUMNS WHERE TABLE_NAME IN ({in_clause})"
+        
+        logger.info(f"Fetching columns for {len(table_names)} tables in single query...")
+        result = run_query(db, connection_id, sql, limit=10000)
+        rows = result.get("rows", [])
+        columns = result.get("columns", [])
+        
+        # Group columns by table name
+        table_columns: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            col_dict = dict(zip(columns, row))
+            table_name = col_dict.get("TABLE_NAME", "")
+            if table_name:
+                table_columns.setdefault(table_name, []).append(col_dict)
+        
+        logger.info(f"Fetched columns for {len(table_columns)} tables")
+        return table_columns
+    except JdbcError as e:
+        logger.error(f"Failed to fetch columns: {e}")
+        return {}
+
+
 def fetch_columns_for_table(db: Session, connection_id: str, table_name: str) -> list[dict[str, Any]]:
     """Fetch columns for a specific table from OA_COLUMNS."""
     try:
@@ -136,35 +170,35 @@ def discover_schema(
     logger.info("Discovering schema for connection %s...", connection_id)
     start_time = time.time()
     
-    # Fetch all tables
-    tables_data = fetch_tables(db, connection_id)
-    
     # Build table info dictionary
     tables: dict[str, TableInfo] = {}
     
-    # If filter provided, only process those tables
+    # Get table names to process
     if table_filter:
-        table_names_to_process = [
-            t for t in tables_data 
-            if t.get("TABLE_NAME", "").upper() in [f.upper() for f in table_filter]
-        ]
+        # Use the filter directly - don't need to query OA_TABLES
+        table_names_to_process = [t.upper() for t in table_filter]
+        logger.info(f"Using table filter: {len(table_names_to_process)} tables")
     else:
-        table_names_to_process = tables_data
+        # Fetch all tables from OA_TABLES
+        tables_data = fetch_tables(db, connection_id)
+        table_names_to_process = [t.get("TABLE_NAME", "") for t in tables_data if t.get("TABLE_NAME")]
     
-    # Fetch columns for each table
-    for table_data in table_names_to_process:
-        table_name = table_data.get("TABLE_NAME", "")
-        if not table_name:
-            continue
-            
+    if not table_names_to_process:
+        logger.warning("No tables to process")
+        return tables
+    
+    # Fetch ALL columns for ALL tables in a SINGLE query (much faster!)
+    all_columns = fetch_columns_for_tables(db, connection_id, table_names_to_process)
+    
+    # Build TableInfo for each table
+    for table_name in table_names_to_process:
+        columns_data = all_columns.get(table_name, [])
+        
         table_info = TableInfo(
             name=table_name,
-            table_type=table_data.get("TABLE_TYPE", ""),
-            description=table_data.get("REMARKS", "") or ""
+            table_type="TABLE",
+            description=""
         )
-        
-        # Fetch columns for this table
-        columns_data = fetch_columns_for_table(db, connection_id, table_name)
         
         for col_data in columns_data:
             col_name = col_data.get("COLUMN_NAME", "")
@@ -182,8 +216,9 @@ def discover_schema(
             )
             table_info.columns[col_name] = col_info
         
-        tables[table_name] = table_info
-        logger.debug(f"Discovered table {table_name} with {len(table_info.columns)} columns")
+        if table_info.columns:  # Only add tables that have columns
+            tables[table_name] = table_info
+            logger.debug(f"Discovered table {table_name} with {len(table_info.columns)} columns")
     
     elapsed = time.time() - start_time
     logger.info(f"Schema discovery completed in {elapsed:.2f}s: {len(tables)} tables")
