@@ -18,8 +18,8 @@ from app.netsuite.jdbc import run_query, JdbcError
 
 logger = logging.getLogger(__name__)
 
-# Cache TTL in seconds (1 hour default)
-SCHEMA_CACHE_TTL = 3600
+# Cache TTL in seconds (2 days)
+SCHEMA_CACHE_TTL = 172800
 
 
 @dataclass
@@ -190,8 +190,24 @@ def discover_schema(
         # Check cache first
         cache = _schema_cache.get(connection_id)
         if not force_refresh and _is_cache_valid(cache):
-            logger.debug("Using cached schema for connection %s", connection_id)
-            return cache.tables
+            # If we have a table_filter, check if ALL requested tables are already cached
+            if table_filter:
+                # Normalize table names for comparison (case-insensitive)
+                cached_tables_lower = {t.lower() for t in cache.tables.keys()}
+                requested_lower = {t.lower() for t in table_filter}
+                missing_tables = requested_lower - cached_tables_lower
+                
+                if not missing_tables:
+                    # All requested tables are already cached
+                    logger.debug("All requested tables already cached for connection %s", connection_id)
+                    return cache.tables
+                else:
+                    # Some tables are missing - continue to fetch them
+                    logger.info(f"Cache hit but missing tables: {missing_tables}. Will fetch and merge.")
+            else:
+                # No filter - just return full cache
+                logger.debug("Using cached schema for connection %s", connection_id)
+                return cache.tables
     
     logger.info("Discovering schema for connection %s...", connection_id)
     start_time = time.time()
@@ -257,16 +273,29 @@ def discover_schema(
     # Only cache if we actually found tables (don't cache empty results)
     if tables:
         with _cache_lock:
+            # ADDITIVE CACHING: Merge new tables with existing cached tables
+            existing_cache = _schema_cache.get(connection_id)
+            if existing_cache and not force_refresh:
+                # Merge: existing tables + new tables (new tables overwrite if same name)
+                merged_tables = dict(existing_cache.tables)  # Copy existing
+                merged_tables.update(tables)  # Add/overwrite with new
+                logger.info(f"Merging {len(tables)} new tables with {len(existing_cache.tables)} existing. Total: {len(merged_tables)}")
+            else:
+                merged_tables = tables
+            
             _schema_cache[connection_id] = SchemaCache(
-                tables=tables,
+                tables=merged_tables,
                 fetched_at=time.time(),
                 connection_id=connection_id
             )
-        logger.info(f"Cached {len(tables)} tables for connection {connection_id}")
+        logger.info(f"Cached {len(merged_tables)} total tables for connection {connection_id}")
     else:
         logger.warning(f"No tables discovered - NOT caching empty result for {connection_id}")
     
-    return tables
+    # Return the full merged cache, not just the new tables
+    with _cache_lock:
+        final_cache = _schema_cache.get(connection_id)
+        return final_cache.tables if final_cache else tables
 
 
 def get_cached_schema(connection_id: str) -> dict[str, TableInfo] | None:
