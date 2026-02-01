@@ -1,6 +1,16 @@
-# NetSuite SuiteAnalytics Connect Schema Reference (Transactions)
+# NetSuite SuiteAnalytics Connect Schema Reference (transaction)
 
-This document is a **human-readable schema guide** for the NetSuite SuiteAnalytics Connect (JDBC) **Transactions** record and related browsing links. Use it as authoritative reference for table/column names and relationships. Prefer the exact column names and table names shown below.
+This document is a **human-readable schema guide** for the NetSuite SuiteAnalytics Connect (JDBC) **Transactions** record and related browsing links. Use it as authoritative reference for column names and relationships.
+
+## LLM Canonical Table Names (Authoritative Contract)
+
+Use **only** these canonical table names in generated SQL:
+
+- **transaction** (header) → NetSuite table: **Transactions**
+- **transactionLine** (line) → NetSuite table: **Transaction_lines**
+- **Account** → NetSuite table: **Accounts**
+
+Do **not** use the raw NetSuite table names in generated SQL. Use the column names exactly as listed below, but always attach them to the canonical table names above.
 
 ## Browsers and Reference Links
 
@@ -17,10 +27,10 @@ Additional navigation links:
 
 ## Transactions Table – Key Notes
 
-- The **Transaction Body Fields** custom field is available for the **Transactions** table.
-- **Credit and debit amounts are NOT exposed** as columns in **Transactions**. Use **Transaction Lines** to obtain credit and debit amounts.
+- The **Transaction Body Fields** custom field is available for the **transaction** table (NetSuite: **Transactions**).
+- **Credit and debit amounts are NOT exposed** as columns in **transaction**. Use **transactionLine** to obtain credit and debit amounts.
   - More info: https://system.netsuite.com/app/help/helpcenter.nl?topic=DOC_section_4400769955
-- **Item count and quantity are NOT exposed** as columns in **Transactions**. Use **Transaction Lines** for quantities.
+- **Item count and quantity are NOT exposed** as columns in **transaction**. Use **transactionLine** for quantities.
   - More info: https://system.netsuite.com/app/help/helpcenter.nl?topic=DOC_section_1512507697
 
 ## Transactions – Columns
@@ -239,7 +249,7 @@ Transactions
 
 ---
 
-# Transaction_lines
+# Transaction_lines (canonical: transactionLine)
 
 This section documents the **Transaction_lines** table for SuiteAnalytics Connect (JDBC).
 
@@ -554,7 +564,7 @@ Transaction\_tracking\_numbers
 
 Transactions
 
-# Transactions
+# Transactions (canonical: transaction)
 
 
 The Transaction Body Fields custom field is available for the Transactions table.
@@ -779,7 +789,7 @@ Transactions
 
 ---
 
-# Accounts
+# Accounts (canonical: Account)
 
 This section documents the **Accounts** table for SuiteAnalytics Connect (JDBC).
 
@@ -794,7 +804,7 @@ This section documents the **Accounts** table for SuiteAnalytics Connect (JDBC).
 
 - The **Other Custom Fields > Account** custom field is available for the Accounts table.
 - To obtain the subsidiaries for accounts, use the **Account_subsidiary_map** table.
-- JOIN to Transaction_lines using: `Transaction_lines.account_id = Accounts.account_id`
+- JOIN to transactionLine using: `transactionLine.account_id = Account.account_id`
 
 ## Accounts – Columns
 
@@ -872,18 +882,18 @@ This section documents the **Accounts** table for SuiteAnalytics Connect (JDBC).
 
 ```sql
 SELECT 
-    T.transaction_id,
-    T.tranid,
-    T.trandate,
-    TL.transaction_line_id,
-    TL.amount,
-    A.account_id,
-    A.accountnumber,
-    A.name AS account_name,
-    A.type_name AS account_type
-FROM Transactions T
-INNER JOIN Transaction_lines TL ON T.transaction_id = TL.transaction_id
-INNER JOIN Accounts A ON TL.account_id = A.account_id
+  T.transaction_id,
+  T.tranid,
+  T.trandate,
+  TL.transaction_line_id,
+  TL.amount,
+  A.account_id,
+  A.accountnumber,
+  A.name AS account_name,
+  A.type_name AS account_type
+FROM transaction T
+INNER JOIN transactionLine TL ON T.transaction_id = TL.transaction_id
+INNER JOIN Account A ON TL.account_id = A.account_id
 WHERE <conditions>
 ```
 
@@ -905,8 +915,8 @@ This section documents the **Customers** table for SuiteAnalytics Connect (JDBC)
 ## Customers Table – Key Notes
 
 - The **Entity Fields** custom field is available for the Customers table.
-- JOIN to Transactions using: `Transactions.entity_id = Customers.customer_id`
-- JOIN to Transaction_lines using: `Transaction_lines.company_id = Customers.customer_id`
+- JOIN to transaction using: `transaction.entity_id = Customers.customer_id`
+- JOIN to transactionLine using: `transactionLine.company_id = Customers.customer_id`
 
 ## Customers – Columns
 
@@ -1121,20 +1131,20 @@ This section documents the **Customers** table for SuiteAnalytics Connect (JDBC)
 
 ```sql
 SELECT 
-    T.transaction_id,
-    T.tranid,
-    T.trandate,
-    T.transaction_type,
-    C.customer_id,
-    C.companyname,
-    C.name AS customer_name,
-    C.email,
-    C.phone,
-    C.city,
-    C.state,
-    C.country
-FROM Transactions T
-INNER JOIN Transaction_lines TL ON T.transaction_id = TL.transaction_id
+  T.transaction_id,
+  T.tranid,
+  T.trandate,
+  T.transaction_type,
+  C.customer_id,
+  C.companyname,
+  C.name AS customer_name,
+  C.email,
+  C.phone,
+  C.city,
+  C.state,
+  C.country
+FROM transaction T
+INNER JOIN transactionLine TL ON T.transaction_id = TL.transaction_id
 INNER JOIN Customers C ON T.entity_id = C.customer_id
 WHERE T.transaction_type IN ('CustInvc', 'SalesOrd', 'CashSale')
 ```
@@ -1143,15 +1153,15 @@ WHERE T.transaction_type IN ('CustInvc', 'SalesOrd', 'CashSale')
 
 ```sql
 SELECT 
-    T.transaction_id,
-    T.tranid,
-    TL.transaction_line_id,
-    TL.amount,
-    C.customer_id,
-    C.companyname,
-    C.name AS customer_name
-FROM Transactions T
-INNER JOIN Transaction_lines TL ON T.transaction_id = TL.transaction_id
+  T.transaction_id,
+  T.tranid,
+  TL.transaction_line_id,
+  TL.amount,
+  C.customer_id,
+  C.companyname,
+  C.name AS customer_name
+FROM transaction T
+INNER JOIN transactionLine TL ON T.transaction_id = TL.transaction_id
 INNER JOIN Customers C ON TL.company_id = C.customer_id
 WHERE <conditions>
 ```

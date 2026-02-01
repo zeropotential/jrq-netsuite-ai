@@ -560,6 +560,66 @@
               </div>
               <div id="openaiError" style="color: #b91c1c; font-size: 13px; margin-top: 10px; display: none;"></div>
             </div>
+
+            <!-- Schema Cache Card -->
+            <div class="kb-card" id="schemaCacheCard">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <div class="status-indicator" id="schemaCacheIndicator" style="width: 12px; height: 12px; border-radius: 50%; background: #6b7280;"></div>
+                <strong style="font-size: 16px;">Schema Cache</strong>
+                <span id="schemaCacheBadge" class="status-badge" style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e2e8f0; color: #475569;">Checking...</span>
+              </div>
+              <div class="connection-details" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Cached Tables</span>
+                  <div id="schemaCacheTableCount" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Cache Age</span>
+                  <div id="schemaCacheAge" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Expires In</span>
+                  <div id="schemaCacheExpires" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Tables (sample)</span>
+                  <div id="schemaCacheTables" style="font-size: 12px; margin-top: 4px; color: var(--muted);">—</div>
+                </div>
+              </div>
+              <div id="schemaCacheError" style="color: #b91c1c; font-size: 13px; margin-top: 10px; display: none;"></div>
+            </div>
+
+            <!-- LLM Schema Info Card -->
+            <div class="kb-card" id="schemaInfoCard">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <div class="status-indicator" id="schemaInfoIndicator" style="width: 12px; height: 12px; border-radius: 50%; background: #6b7280;"></div>
+                <strong style="font-size: 16px;">LLM Schema Knowledge</strong>
+                <span id="schemaInfoBadge" class="status-badge" style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e2e8f0; color: #475569;">Checking...</span>
+              </div>
+              <div class="connection-details" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Markdown Schema</span>
+                  <div id="schemaInfoMarkdown" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Tables Found</span>
+                  <div id="schemaInfoTables" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Markdown Size</span>
+                  <div id="schemaInfoSize" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">CSV Schema</span>
+                  <div id="schemaInfoCsv" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+              </div>
+              <div class="detail-item" style="margin-top: 10px;">
+                <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Tables (sample)</span>
+                <div id="schemaInfoTablesList" style="font-size: 12px; margin-top: 4px; color: var(--muted);">—</div>
+              </div>
+              <div id="schemaInfoError" style="color: #b91c1c; font-size: 13px; margin-top: 10px; display: none;"></div>
+            </div>
           </div>
         </section>
       </main>
@@ -599,6 +659,21 @@
       const connectionsView = document.getElementById("connectionsView");
       const refreshConnectionsBtn = document.getElementById("refreshConnectionsBtn");
       const connectionsStatus = document.getElementById("connectionsStatus");
+      const schemaCacheIndicator = document.getElementById("schemaCacheIndicator");
+      const schemaCacheBadge = document.getElementById("schemaCacheBadge");
+      const schemaCacheTableCount = document.getElementById("schemaCacheTableCount");
+      const schemaCacheAge = document.getElementById("schemaCacheAge");
+      const schemaCacheExpires = document.getElementById("schemaCacheExpires");
+      const schemaCacheTables = document.getElementById("schemaCacheTables");
+      const schemaCacheError = document.getElementById("schemaCacheError");
+      const schemaInfoIndicator = document.getElementById("schemaInfoIndicator");
+      const schemaInfoBadge = document.getElementById("schemaInfoBadge");
+      const schemaInfoMarkdown = document.getElementById("schemaInfoMarkdown");
+      const schemaInfoTables = document.getElementById("schemaInfoTables");
+      const schemaInfoSize = document.getElementById("schemaInfoSize");
+      const schemaInfoCsv = document.getElementById("schemaInfoCsv");
+      const schemaInfoTablesList = document.getElementById("schemaInfoTablesList");
+      const schemaInfoError = document.getElementById("schemaInfoError");
 
       // Session-based chat history (clears on page refresh)
       let chatHistory = [];
@@ -717,14 +792,50 @@
         }
       };
 
+      const updateCacheUI = (cached) => {
+        if (cached) {
+          schemaCacheIndicator.style.background = "#22c55e";
+          schemaCacheBadge.style.background = "#dcfce7";
+          schemaCacheBadge.style.color = "#166534";
+          schemaCacheBadge.textContent = "Cached";
+        } else {
+          schemaCacheIndicator.style.background = "#6b7280";
+          schemaCacheBadge.style.background = "#e2e8f0";
+          schemaCacheBadge.style.color = "#475569";
+          schemaCacheBadge.textContent = "Not Cached";
+        }
+      };
+
+      const updateSchemaInfoUI = (loaded) => {
+        if (loaded) {
+          schemaInfoIndicator.style.background = "#22c55e";
+          schemaInfoBadge.style.background = "#dcfce7";
+          schemaInfoBadge.style.color = "#166534";
+          schemaInfoBadge.textContent = "Loaded";
+        } else {
+          schemaInfoIndicator.style.background = "#ef4444";
+          schemaInfoBadge.style.background = "#fef2f2";
+          schemaInfoBadge.style.color = "#b91c1c";
+          schemaInfoBadge.textContent = "Missing";
+        }
+      };
+
+      const formatSeconds = (seconds) => {
+        if (seconds === null || seconds === undefined) {
+          return "—";
+        }
+        if (seconds < 60) {
+          return `${Math.round(seconds)}s`;
+        }
+        if (seconds < 3600) {
+          return `${Math.round(seconds / 60)}m`;
+        }
+        return `${Math.round(seconds / 3600)}h`;
+      };
+
       const checkConnectionsHealth = async () => {
         const connectionId = document.getElementById("connectionId").value.trim();
         const apiKey = openaiKeyEl.value.trim();
-
-        if (!connectionId) {
-          connectionsStatus.textContent = "No connection ID configured. Please log in first.";
-          return;
-        }
 
         // Reset UI to checking state
         const jdbcIndicator = document.getElementById("jdbcStatusIndicator");
@@ -735,6 +846,21 @@
         updateStatusUI(openaiIndicator, openaiBadge, "checking");
         document.getElementById("jdbcError").style.display = "none";
         document.getElementById("openaiError").style.display = "none";
+        schemaCacheError.style.display = "none";
+        schemaInfoError.style.display = "none";
+        schemaCacheBadge.textContent = "Checking...";
+        schemaCacheIndicator.style.background = "#6b7280";
+        schemaInfoBadge.textContent = "Checking...";
+        schemaInfoIndicator.style.background = "#6b7280";
+        schemaCacheTableCount.textContent = "—";
+        schemaCacheAge.textContent = "—";
+        schemaCacheExpires.textContent = "—";
+        schemaCacheTables.textContent = "—";
+        schemaInfoMarkdown.textContent = "—";
+        schemaInfoTables.textContent = "—";
+        schemaInfoSize.textContent = "—";
+        schemaInfoCsv.textContent = "—";
+        schemaInfoTablesList.textContent = "—";
         connectionsStatus.textContent = "Checking connections...";
         refreshConnectionsBtn.disabled = true;
 
@@ -744,45 +870,104 @@
             headers["X-OpenAI-Api-Key"] = apiKey;
           }
 
-          const response = await fetch("/api/connections/health", {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ connection_id: connectionId }),
-          });
+          const healthPromise = connectionId
+            ? fetch("/api/connections/health", {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ connection_id: connectionId }),
+              })
+            : Promise.resolve(null);
 
-          if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.detail || `Request failed with status ${response.status}`);
+          const cachePromise = connectionId
+            ? fetch(`/admin/jdbc-connections/${connectionId}/schema-cache`)
+            : Promise.resolve(null);
+
+          const schemaInfoPromise = fetch("/api/schema/info");
+
+          const [healthResponse, cacheResponse, schemaInfoResponse] = await Promise.all([
+            healthPromise,
+            cachePromise,
+            schemaInfoPromise,
+          ]);
+
+          if (healthResponse) {
+            if (!healthResponse.ok) {
+              const errData = await healthResponse.json().catch(() => ({}));
+              throw new Error(errData.detail || `Request failed with status ${healthResponse.status}`);
+            }
+
+            const data = await healthResponse.json();
+            // Update JDBC status
+            updateStatusUI(jdbcIndicator, jdbcBadge, data.jdbc.status);
+            document.getElementById("jdbcName").textContent = data.jdbc.name || "—";
+            document.getElementById("jdbcAccountId").textContent = data.jdbc.account_id || "—";
+            document.getElementById("jdbcHost").textContent = data.jdbc.host || "—";
+            document.getElementById("jdbcRoleId").textContent = data.jdbc.role_id || "—";
+            if (data.jdbc.error) {
+              const jdbcErrorEl = document.getElementById("jdbcError");
+              jdbcErrorEl.textContent = data.jdbc.error;
+              jdbcErrorEl.style.display = "block";
+            }
+
+            // Update OpenAI status
+            updateStatusUI(openaiIndicator, openaiBadge, data.openai.status);
+            document.getElementById("openaiModel").textContent = data.openai.model || "—";
+            if (data.openai.error) {
+              const openaiErrorEl = document.getElementById("openaiError");
+              openaiErrorEl.textContent = data.openai.error;
+              openaiErrorEl.style.display = "block";
+            }
+          } else {
+            updateStatusUI(jdbcIndicator, jdbcBadge, "error");
+            updateStatusUI(openaiIndicator, openaiBadge, "error");
           }
 
-          const data = await response.json();
-
-          // Update JDBC status
-          updateStatusUI(jdbcIndicator, jdbcBadge, data.jdbc.status);
-          document.getElementById("jdbcName").textContent = data.jdbc.name || "—";
-          document.getElementById("jdbcAccountId").textContent = data.jdbc.account_id || "—";
-          document.getElementById("jdbcHost").textContent = data.jdbc.host || "—";
-          document.getElementById("jdbcRoleId").textContent = data.jdbc.role_id || "—";
-          if (data.jdbc.error) {
-            const jdbcErrorEl = document.getElementById("jdbcError");
-            jdbcErrorEl.textContent = data.jdbc.error;
-            jdbcErrorEl.style.display = "block";
+          if (cacheResponse) {
+            if (cacheResponse.ok) {
+              const cacheData = await cacheResponse.json();
+              updateCacheUI(cacheData.cached);
+              schemaCacheTableCount.textContent = cacheData.table_count ?? 0;
+              schemaCacheAge.textContent = formatSeconds(cacheData.cache_age_seconds);
+              schemaCacheExpires.textContent = formatSeconds(cacheData.expires_in_seconds);
+              schemaCacheTables.textContent = cacheData.tables?.slice(0, 10).join(", ") || "—";
+            } else {
+              updateCacheUI(false);
+              const errData = await cacheResponse.json().catch(() => ({}));
+              schemaCacheError.textContent = errData.detail || `Cache status failed (${cacheResponse.status})`;
+              schemaCacheError.style.display = "block";
+            }
+          } else {
+            updateCacheUI(false);
+            schemaCacheError.textContent = "No connection ID configured. Log in to view cache status.";
+            schemaCacheError.style.display = "block";
           }
 
-          // Update OpenAI status
-          updateStatusUI(openaiIndicator, openaiBadge, data.openai.status);
-          document.getElementById("openaiModel").textContent = data.openai.model || "—";
-          if (data.openai.error) {
-            const openaiErrorEl = document.getElementById("openaiError");
-            openaiErrorEl.textContent = data.openai.error;
-            openaiErrorEl.style.display = "block";
+          if (schemaInfoResponse.ok) {
+            const schemaInfo = await schemaInfoResponse.json();
+            updateSchemaInfoUI(schemaInfo.markdown_schema_loaded);
+            schemaInfoMarkdown.textContent = schemaInfo.markdown_schema_loaded ? "Loaded" : "Missing";
+            schemaInfoTables.textContent = schemaInfo.markdown_schema_tables?.length ?? 0;
+            schemaInfoSize.textContent = schemaInfo.markdown_schema_size ? `${schemaInfo.markdown_schema_size} chars` : "—";
+            schemaInfoCsv.textContent = schemaInfo.csv_schema_loaded
+              ? `Loaded (${schemaInfo.csv_schema_tables} tables)`
+              : "Missing";
+            schemaInfoTablesList.textContent = schemaInfo.markdown_schema_tables?.slice(0, 12).join(", ") || "—";
+          } else {
+            updateSchemaInfoUI(false);
+            const errData = await schemaInfoResponse.json().catch(() => ({}));
+            schemaInfoError.textContent = errData.detail || `Schema info failed (${schemaInfoResponse.status})`;
+            schemaInfoError.style.display = "block";
           }
 
-          connectionsStatus.textContent = "";
+          connectionsStatus.textContent = connectionId
+            ? ""
+            : "No connection ID configured. Log in to view JDBC cache status.";
         } catch (err) {
           connectionsStatus.textContent = err.message;
           updateStatusUI(jdbcIndicator, jdbcBadge, "error");
           updateStatusUI(openaiIndicator, openaiBadge, "error");
+          updateCacheUI(false);
+          updateSchemaInfoUI(false);
         } finally {
           refreshConnectionsBtn.disabled = false;
         }
