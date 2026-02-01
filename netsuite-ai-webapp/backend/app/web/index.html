@@ -264,6 +264,10 @@
         line-height: 1.6;
         border: 1px solid var(--border);
       }
+      .message .content {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
       .message-row {
         display: grid;
         grid-template-columns: 36px 1fr;
@@ -866,11 +870,13 @@
             <div class="avatar ${avatarClass}">${avatarText}</div>
             <div>
               <div class="message-header"><strong>${label}</strong></div>
-              <div class="content">${text}</div>
+              <div class="content"></div>
               ${source ? `<small>${source}</small>` : ""}
             </div>
           </div>
         `;
+        const contentEl = div.querySelector(".content");
+        if (contentEl) contentEl.textContent = text;
         chatEl.prepend(div);
         return div;
       };
@@ -911,7 +917,7 @@
         
         // For data tables (contains pipes), show instantly
         if (text.includes(" | ") && text.includes("\n")) {
-          contentDiv.innerHTML = text.replace(/\n/g, "<br>");
+          contentDiv.textContent = text;
           return;
         }
         
@@ -1023,7 +1029,7 @@
         
         // Set text content
         const textDiv = div.querySelector(`#${vizId}-text`);
-        textDiv.innerHTML = text.replace(/\\n/g, "<br>");
+        textDiv.textContent = text;
         
         // Toggle buttons
         const toggleBtns = div.querySelectorAll(".viz-toggle button");
