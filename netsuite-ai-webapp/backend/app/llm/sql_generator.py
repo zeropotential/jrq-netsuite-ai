@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import csv
 import logging
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 
 from openai import OpenAI
 
@@ -13,6 +16,32 @@ logger = logging.getLogger(__name__)
 
 class LlmError(RuntimeError):
     pass
+
+
+@lru_cache
+def _load_allowed_schema() -> str | None:
+    csv_path = Path(__file__).resolve().parents[2] / "Table - FIeld List - Sheet1.csv"
+    if not csv_path.exists():
+        logger.warning("Allowed schema CSV not found: %s", csv_path)
+        return None
+
+    table_map: dict[str, set[str]] = {}
+    with csv_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            table = (row.get("Table Name in NetSuite2.com") or "").strip()
+            field = (row.get("Field ID in NetSuite2.com") or "").strip()
+            if not table or not field:
+                continue
+            if table in {"-", "N/A"} or field in {"-", "N/A"}:
+                continue
+            table_map.setdefault(table, set()).add(field)
+
+    lines = ["ALLOWED TABLES AND COLUMNS (ONLY USE THESE):"]
+    for table in sorted(table_map):
+        cols = ", ".join(sorted(table_map[table]))
+        lines.append(f"{table}:\n  {cols}")
+    return "\n".join(lines)
 
 
 @dataclass(frozen=True)
@@ -72,6 +101,10 @@ def generate_oracle_sql(
         {
             "type": "text",
             "text": "You are an expert in NetSuite SuiteAnalytics Connect (JDBC) SQL. All SQL you generate must be valid for the NetSuite OpenAccess SQL engine and executable without modification."
+        },
+        {
+            "type": "text",
+            "text": "SCHEMA RESTRICTION: You MUST ONLY use tables and columns listed in the allowed schema below. Do not use any other tables or columns."
         },
         {
             "type": "text",
@@ -148,14 +181,17 @@ def generate_oracle_sql(
     # Combine all system text into one system message
     system_content = "\n\n".join([msg["text"] for msg in system_messages])
 
-    # Use the full schema from the Excel file, or fall back to provided hint
-    schema = schema_hint if schema_hint else NETSUITE_SCHEMA
+    # Use CSV allowed schema if present, else fall back
+    allowed_schema = _load_allowed_schema()
+    schema = allowed_schema or NETSUITE_SCHEMA
 
     kb_text = f"\n\n{kb_context}\n" if kb_context else ""
+    schema_hint_text = f"\n\nSCHEMA HINT:\n{schema_hint}" if schema_hint else ""
     user = (
         f"{schema}\n\n"
         f"{kb_text}"
-        f"User request: {prompt}\n\n"
+        f"{schema_hint_text}"
+        f"\n\nUser request: {prompt}\n\n"
         "Generate a SuiteAnalytics Connect SQL query. No semicolon at the end."
     )
 
