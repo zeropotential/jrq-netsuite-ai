@@ -226,6 +226,68 @@ class SchemaCacheStatusResponse(BaseModel):
     expires_in_seconds: float | None
 
 
+class ColumnDetail(BaseModel):
+    name: str
+    data_type: str
+    nullable: bool
+
+
+class TableDetail(BaseModel):
+    name: str
+    columns: list[ColumnDetail]
+
+
+class SchemaCacheDetailResponse(BaseModel):
+    cached: bool
+    table_count: int
+    tables: list[TableDetail]
+    cache_age_seconds: float | None
+
+
+@router.get("/jdbc-connections/{connection_id}/schema-cache/detail", response_model=SchemaCacheDetailResponse)
+def get_schema_cache_detail(connection_id: str) -> SchemaCacheDetailResponse:
+    """
+    Get full detail of cached schema including all column names and types.
+    Use this to see exactly what columns are available for SQL generation.
+    """
+    import time
+    from app.netsuite.schema_discovery import _schema_cache, _cache_lock
+    
+    cached = get_cached_schema(connection_id)
+    
+    if cached is None:
+        return SchemaCacheDetailResponse(
+            cached=False,
+            table_count=0,
+            tables=[],
+            cache_age_seconds=None
+        )
+    
+    with _cache_lock:
+        cache_entry = _schema_cache.get(connection_id)
+        age = time.time() - cache_entry.fetched_at if cache_entry else None
+    
+    # Build detailed table list
+    table_details = []
+    for table_name, table_info in sorted(cached.items()):
+        columns = [
+            ColumnDetail(
+                name=col.name,
+                data_type=col.data_type,
+                nullable=col.nullable
+            )
+            for col in sorted(table_info.columns.values(), key=lambda c: c.name)
+        ]
+        table_details.append(TableDetail(name=table_name, columns=columns))
+    
+    return SchemaCacheDetailResponse(
+        cached=True,
+        table_count=len(cached),
+        tables=table_details,
+        cache_age_seconds=round(age, 1) if age is not None else None
+    )
+
+
 @router.get("/jdbc-connections/{connection_id}/schema-cache", response_model=SchemaCacheStatusResponse)
 def get_schema_cache_status(connection_id: str) -> SchemaCacheStatusResponse:
     """
