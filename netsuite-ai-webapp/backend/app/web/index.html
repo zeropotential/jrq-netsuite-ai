@@ -433,7 +433,7 @@
             <textarea id="message" placeholder="Example: total sales by month for 2024"></textarea>
           </label>
           <div class="actions" style="margin-top: 10px;">
-            <button id="sendBtn">Send to Chat</button>
+            <button id="sendBtn">Send</button>
             <button id="clearChatBtn" class="btn-secondary">Clear Chat</button>
             <button id="runReportBtn" class="btn-secondary">Run Report</button>
             <button id="exportCsvBtn" class="btn-secondary">Export CSV</button>
@@ -1072,6 +1072,14 @@
           addMessage("Error", errorMsg, "Check browser console (F12) for details");
         } finally {
           sendBtn.disabled = false;
+        }
+      });
+
+      const messageEl = document.getElementById("message");
+      messageEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendBtn.click();
         }
       });
 
