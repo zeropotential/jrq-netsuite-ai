@@ -98,6 +98,25 @@ def test_jdbc_connection(connection_id: str, db: Session = Depends(get_db)) -> d
 class SchemaDiscoveryRequest(BaseModel):
     force_refresh: bool = False
     table_filter: list[str] | None = None
+    transaction_tables_only: bool = True  # Default to just transaction tables for speed
+
+
+# Default tables to fetch (transaction-focused for common queries)
+DEFAULT_TRANSACTION_TABLES = [
+    "TRANSACTIONS",
+    "TRANSACTION_LINES", 
+    "TRANSACTION_LINKS",
+    "ACCOUNTS",
+    "ITEMS",
+    "ENTITIES",
+    "SUBSIDIARIES",
+    "DEPARTMENTS",
+    "CLASSES",
+    "LOCATIONS",
+    "CUSTOMERS",
+    "VENDORS",
+    "EMPLOYEES",
+]
 
 
 class SchemaDiscoveryResponse(BaseModel):
@@ -116,6 +135,9 @@ def discover_database_schema(
     """
     Discover and cache the database schema from OA_TABLES and OA_COLUMNS.
     This schema will be used by the LLM for SQL generation.
+    
+    By default, only fetches transaction-related tables for faster loading.
+    Set transaction_tables_only=false to fetch all tables (may be slow).
     """
     payload = payload or SchemaDiscoveryRequest()
     
@@ -123,12 +145,17 @@ def discover_database_schema(
         # Check if we already have cached schema
         was_cached = get_cached_schema(connection_id) is not None
         
+        # Determine which tables to fetch
+        table_filter = payload.table_filter
+        if table_filter is None and payload.transaction_tables_only:
+            table_filter = DEFAULT_TRANSACTION_TABLES
+        
         # Discover schema
         tables = discover_schema(
             db,
             connection_id,
             force_refresh=payload.force_refresh,
-            table_filter=payload.table_filter
+            table_filter=table_filter
         )
         
         # Generate LLM context preview (truncated)

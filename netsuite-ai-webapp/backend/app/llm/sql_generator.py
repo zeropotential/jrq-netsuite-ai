@@ -71,28 +71,25 @@ def _load_markdown_schema() -> str | None:
 def _load_live_schema(db: "Session", connection_id: str) -> str | None:
     """
     Load live schema from OA_TABLES and OA_COLUMNS via JDBC.
-    This fetches the actual database schema and caches it.
+    
+    NOTE: This only returns cached schema. Schema discovery must be triggered
+    separately via the admin endpoint to avoid blocking chat requests.
+    The discovery process can take a long time for large schemas.
     """
     try:
         from app.netsuite.schema_discovery import (
-            discover_schema,
-            schema_to_llm_context,
-            get_cached_schema
+            get_cached_schema,
+            schema_to_llm_context
         )
         
-        # Try to get cached schema first
+        # Only use cached schema - don't block on discovery
         cached = get_cached_schema(connection_id)
         if cached:
             logger.debug("Using cached live schema for connection %s", connection_id)
             return schema_to_llm_context(cached)
         
-        # Discover schema (will be cached automatically)
-        tables = discover_schema(db, connection_id)
-        if tables:
-            schema_text = schema_to_llm_context(tables)
-            logger.info(f"Loaded live schema: {len(tables)} tables")
-            return schema_text
-        
+        # No cached schema available - use markdown schema instead
+        logger.debug("No cached live schema for connection %s, using markdown schema", connection_id)
         return None
     except Exception as exc:
         logger.warning("Failed to load live schema: %s", exc)
