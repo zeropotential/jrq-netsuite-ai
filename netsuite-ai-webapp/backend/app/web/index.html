@@ -187,6 +187,38 @@
         line-height: 1.6;
         border: 1px solid var(--border);
       }
+      .message-row {
+        display: grid;
+        grid-template-columns: 36px 1fr;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      .avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: #e2e8f0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 14px;
+        color: #0f172a;
+      }
+      .avatar.assistant {
+        background: linear-gradient(135deg, #0f766e, #22c1a2);
+        color: white;
+      }
+      .avatar.user {
+        background: #e0f2fe;
+        color: #0369a1;
+      }
+      .message-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
       .message strong {
         display: inline-block;
         margin-bottom: 6px;
@@ -343,8 +375,20 @@
 
       const addMessage = (label, text, source) => {
         const div = document.createElement("div");
+        const isAssistant = label.toLowerCase() === "assistant";
+        const avatarClass = isAssistant ? "assistant" : "user";
+        const avatarText = isAssistant ? "AI" : "U";
         div.className = "message";
-        div.innerHTML = `<strong>${label}</strong><div>${text}</div>${source ? `<small>${source}</small>` : ""}`;
+        div.innerHTML = `
+          <div class="message-row">
+            <div class="avatar ${avatarClass}">${avatarText}</div>
+            <div>
+              <div class="message-header"><strong>${label}</strong></div>
+              <div class="content">${text}</div>
+              ${source ? `<small>${source}</small>` : ""}
+            </div>
+          </div>
+        `;
         chatEl.prepend(div);
         return div;
       };
@@ -355,11 +399,16 @@
         div.className = "message";
         div.id = "thinking-indicator";
         div.innerHTML = `
-          <strong>Assistant</strong>
-          <div class="thinking">
-            <span>Thinking</span>
-            <div class="thinking-dots">
-              <span></span><span></span><span></span>
+          <div class="message-row">
+            <div class="avatar assistant">AI</div>
+            <div>
+              <div class="message-header"><strong>Assistant</strong></div>
+              <div class="thinking">
+                <span>Thinking</span>
+                <div class="thinking-dots">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
             </div>
           </div>
         `;
@@ -375,7 +424,7 @@
 
       // Typing effect function
       const typeText = async (element, text, speed = 15) => {
-        const contentDiv = element.querySelector("div");
+        const contentDiv = element.querySelector(".content");
         contentDiv.innerHTML = "";
         
         // For data tables (contains pipes), show instantly
@@ -423,8 +472,20 @@
       // Add message with typing effect
       const addMessageWithTyping = async (label, text, source) => {
         const div = document.createElement("div");
+        const isAssistant = label.toLowerCase() === "assistant";
+        const avatarClass = isAssistant ? "assistant" : "user";
+        const avatarText = isAssistant ? "AI" : "U";
         div.className = "message";
-        div.innerHTML = `<strong>${label}</strong><div></div>${source ? `<small>${source}</small>` : ""}`;
+        div.innerHTML = `
+          <div class="message-row">
+            <div class="avatar ${avatarClass}">${avatarText}</div>
+            <div>
+              <div class="message-header"><strong>${label}</strong></div>
+              <div class="content"></div>
+              ${source ? `<small>${source}</small>` : ""}
+            </div>
+          </div>
+        `;
         chatEl.prepend(div);
         await typeText(div, text);
         // Re-add source after typing (in case it was cleared)
