@@ -184,9 +184,9 @@ def generate_oracle_sql(
             "type": "text",
             "text": (
                 "KEY TABLES FROM SCHEMA:\n"
-                "- Transactions: Main transaction header table (PK: transaction_id). Contains dates, entity, status, memo, etc.\n"
-                "- Transaction_lines: Line-level details (composite PK: transaction_id + transaction_line_id). Contains amounts, quantities, accounts, items.\n"
-                "- Always JOIN these tables on: Transactions.transaction_id = Transaction_lines.transaction_id"
+                "- transaction: Main transaction header table (PK: id). Contains dates, entity, status, memo, etc.\n"
+                "- transactionLine: Line-level details. Contains amounts, quantities, accounts, items.\n"
+                "- Always JOIN these tables on: T.id = TL.transaction"
             )
         },
         {
@@ -204,17 +204,17 @@ def generate_oracle_sql(
             "type": "text",
             "text": (
                 "TRANSACTION QUERY PATTERN (MANDATORY):\n"
-                "When querying transaction data, ALWAYS join Transactions with Transaction_lines:\n"
+                "When querying transaction data, ALWAYS join transaction with transactionLine:\n"
                 "```\n"
-                "SELECT T.transaction_id, T.tranid, T.trandate, T.transaction_type, T.status,\n"
-                "       TL.transaction_line_id, TL.item_id, TL.amount, TL.net_amount, TL.item_count\n"
-                "FROM Transactions T\n"
-                "INNER JOIN Transaction_lines TL ON T.transaction_id = TL.transaction_id\n"
-                "WHERE <conditions>\n"
+                "SELECT T.id, T.tranid, T.trandate, T.type, T.status,\n"
+                "       TL.id AS line_id, TL.item, TL.amount, TL.netamount\n"
+                "FROM transaction T\n"
+                "INNER JOIN transactionLine TL ON T.id = TL.transaction\n"
+                "WHERE T.posting = 'T'\n"
                 "```\n"
-                "- Transactions table has header info: dates, entity, status, memo, type\n"
-                "- Transaction_lines table has line details: amounts, quantities, items, accounts\n"
-                "- NEVER query Transactions alone when amounts, items, or quantities are needed\n"
+                "- transaction table has header info: dates, entity, status, memo, type\n"
+                "- transactionLine table has line details: amounts, quantities, items, accounts\n"
+                "- NEVER query transaction alone when amounts, items, or quantities are needed\n"
                 "- Use LEFT JOIN only if you need transactions even without lines"
             )
         },
@@ -222,13 +222,13 @@ def generate_oracle_sql(
             "type": "text",
             "text": (
                 "TRANSACTION AND LINE RULES:\n"
-                "1. The main transaction table is 'Transactions' (primary key: transaction_id).\n"
-                "2. The line-level detail table is 'Transaction_lines' (composite PK: transaction_id + transaction_line_id).\n"
-                "3. JOIN Transactions T to Transaction_lines TL using: T.transaction_id = TL.transaction_id.\n"
-                "4. Credit/debit amounts and quantities are in Transaction_lines, NOT in Transactions.\n"
-                "5. Use valid SuiteAnalytics Connect JDBC column names only (e.g., TL.amount, TL.net_amount, TL.item_count, TL.quantity_committed).\n"
-                "6. When filtering posting transactions, use T.is_non_posting = 'No' (VARCHAR2 'Yes'/'No').\n"
-                "7. Use TL.non_posting_line = 'No' to filter out non-posting lines if needed."
+                "1. The main transaction table is 'transaction' (primary key: id).\n"
+                "2. The line-level detail table is 'transactionLine'.\n"
+                "3. JOIN transaction T to transactionLine TL using: T.id = TL.transaction.\n"
+                "4. Credit/debit amounts and quantities are in transactionLine, NOT in transaction.\n"
+                "5. Use valid SuiteAnalytics Connect JDBC column names only (e.g., TL.amount, TL.netamount).\n"
+                "6. When filtering posting transactions, use T.posting = 'T' (VARCHAR2 'T'/'F').\n"
+                "7. Transaction type is T.type (e.g., 'CustInvc', 'SalesOrd', 'VendBill')."
             )
         },
         {
@@ -266,7 +266,10 @@ def generate_oracle_sql(
                 "- Only columns from the MARKDOWN SCHEMA REFERENCE are used\n"
                 "- All GROUP BY rules are satisfied\n"
                 "- JOINs use correct foreign key relationships from schema\n"
-                "- Table names match exactly: Transactions, Transaction_lines (case-sensitive)\n"
+                "- Table names: transaction, transactionLine (canonical names)\n"
+                "- Primary key is T.id, FK is TL.transaction\n"
+                "- Transaction type uses T.type (not transaction_type)\n"
+                "- Posting filter uses T.posting = 'T' (not is_non_posting)\n"
                 "If any rule is violated, revise the SQL until all checks pass."
             )
         },
