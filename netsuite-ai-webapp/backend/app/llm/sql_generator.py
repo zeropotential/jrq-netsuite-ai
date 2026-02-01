@@ -280,7 +280,27 @@ def generate_oracle_sql(
                 "- Output executable SQL only\n"
                 "- Do not include semicolons at the end\n"
                 "- Do not explain the SQL unless explicitly asked\n"
-                "- Prioritize correctness and SuiteAnalytics compatibility over brevity"
+                "- Prioritize correctness and SuiteAnalytics compatibility over brevity\n"
+                "- For dashboard/summary requests with multiple metrics, use a SINGLE query with CASE statements or conditional aggregation\n"
+                "- ALWAYS generate SQL - never refuse or return empty"
+            )
+        },
+        {
+            "type": "text",
+            "text": (
+                "MULTI-METRIC QUERIES (Dashboards/Summaries):\n"
+                "When asked for multiple metrics (e.g., 'created, paid, open'), use conditional aggregation in ONE query:\n"
+                "```\n"
+                "SELECT\n"
+                "  COUNT(DISTINCT CASE WHEN T.type = 'CustInvc' THEN T.id END) AS invoices_created,\n"
+                "  COUNT(DISTINCT CASE WHEN T.type = 'CustPymt' THEN T.id END) AS payments,\n"
+                "  COUNT(DISTINCT CASE WHEN T.type = 'CustInvc' AND T.status = 'open' THEN T.id END) AS open_invoices\n"
+                "FROM transaction T\n"
+                "WHERE T.posting = 'T'\n"
+                "  AND T.trandate >= TO_DATE('2025-01-01','YYYY-MM-DD')\n"
+                "  AND T.trandate <= TO_DATE('2025-12-31','YYYY-MM-DD')\n"
+                "```\n"
+                "This is more efficient than multiple separate queries."
             )
         }
     ]
