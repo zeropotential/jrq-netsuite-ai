@@ -469,6 +469,62 @@
           </div>
           <div class="kb-list" id="kbList"></div>
         </section>
+
+        <section class="panel hidden" id="connectionsView">
+          <h3 style="margin:0 0 6px 0;">Connection Status</h3>
+          <p class="footer" style="margin-top:0;">View the health status of your database and API connections.</p>
+          
+          <div class="actions" style="margin-bottom: 16px;">
+            <button id="refreshConnectionsBtn">Refresh Status</button>
+            <span id="connectionsStatus" class="footer"></span>
+          </div>
+
+          <div class="connection-cards" style="display: flex; flex-direction: column; gap: 16px;">
+            <!-- NetSuite JDBC Card -->
+            <div class="kb-card" id="jdbcCard">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <div class="status-indicator" id="jdbcStatusIndicator" style="width: 12px; height: 12px; border-radius: 50%; background: #6b7280;"></div>
+                <strong style="font-size: 16px;">NetSuite Database (JDBC)</strong>
+                <span id="jdbcStatusBadge" class="status-badge" style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e2e8f0; color: #475569;">Checking...</span>
+              </div>
+              <div class="connection-details" id="jdbcDetails" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Connection Name</span>
+                  <div id="jdbcName" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Account ID</span>
+                  <div id="jdbcAccountId" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Host</span>
+                  <div id="jdbcHost" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Role ID</span>
+                  <div id="jdbcRoleId" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+              </div>
+              <div id="jdbcError" style="color: #b91c1c; font-size: 13px; margin-top: 10px; display: none;"></div>
+            </div>
+
+            <!-- OpenAI API Card -->
+            <div class="kb-card" id="openaiCard">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <div class="status-indicator" id="openaiStatusIndicator" style="width: 12px; height: 12px; border-radius: 50%; background: #6b7280;"></div>
+                <strong style="font-size: 16px;">OpenAI API</strong>
+                <span id="openaiStatusBadge" class="status-badge" style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e2e8f0; color: #475569;">Checking...</span>
+              </div>
+              <div class="connection-details" id="openaiDetails">
+                <div class="detail-item">
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Model</span>
+                  <div id="openaiModel" style="font-size: 14px; margin-top: 4px;">—</div>
+                </div>
+              </div>
+              <div id="openaiError" style="color: #b91c1c; font-size: 13px; margin-top: 10px; display: none;"></div>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -503,6 +559,9 @@
       const loginOpenaiError = document.getElementById("loginOpenaiError");
       const connectionError = document.getElementById("connectionError");
       const openaiError = document.getElementById("openaiError");
+      const connectionsView = document.getElementById("connectionsView");
+      const refreshConnectionsBtn = document.getElementById("refreshConnectionsBtn");
+      const connectionsStatus = document.getElementById("connectionsStatus");
 
       // Session-based chat history (clears on page refresh)
       let chatHistory = [];
@@ -543,15 +602,23 @@
         document.querySelectorAll(".nav-item").forEach((el) => {
           el.classList.toggle("active", el.dataset.view === view);
         });
+        // Hide all views first
+        chatView.classList.add("hidden");
+        kbView.classList.add("hidden");
+        connectionsView.classList.add("hidden");
+        
         if (view === "kb") {
-          chatView.classList.add("hidden");
           kbView.classList.remove("hidden");
           viewTitle.textContent = "Knowledge Base";
           viewBadge.textContent = "Notes & Context";
           loadKb();
+        } else if (view === "connections") {
+          connectionsView.classList.remove("hidden");
+          viewTitle.textContent = "Connections";
+          viewBadge.textContent = "Health Status";
+          checkConnectionsHealth();
         } else {
           chatView.classList.remove("hidden");
-          kbView.classList.add("hidden");
           viewTitle.textContent = "Chat Workspace";
           viewBadge.textContent = "General assistant";
         }
@@ -592,6 +659,99 @@
         kbStatus.textContent = "Cleared.";
         setTimeout(() => (kbStatus.textContent = ""), 1500);
       });
+
+      // Connections health check
+      const updateStatusUI = (indicator, badge, status) => {
+        if (status === "connected") {
+          indicator.style.background = "#22c55e";
+          badge.style.background = "#dcfce7";
+          badge.style.color = "#166534";
+          badge.textContent = "Connected";
+        } else if (status === "error") {
+          indicator.style.background = "#ef4444";
+          badge.style.background = "#fef2f2";
+          badge.style.color = "#b91c1c";
+          badge.textContent = "Error";
+        } else {
+          indicator.style.background = "#6b7280";
+          badge.style.background = "#e2e8f0";
+          badge.style.color = "#475569";
+          badge.textContent = "Checking...";
+        }
+      };
+
+      const checkConnectionsHealth = async () => {
+        const connectionId = document.getElementById("connectionId").value.trim();
+        const apiKey = openaiKeyEl.value.trim();
+
+        if (!connectionId) {
+          connectionsStatus.textContent = "No connection ID configured. Please log in first.";
+          return;
+        }
+
+        // Reset UI to checking state
+        const jdbcIndicator = document.getElementById("jdbcStatusIndicator");
+        const jdbcBadge = document.getElementById("jdbcStatusBadge");
+        const openaiIndicator = document.getElementById("openaiStatusIndicator");
+        const openaiBadge = document.getElementById("openaiStatusBadge");
+        updateStatusUI(jdbcIndicator, jdbcBadge, "checking");
+        updateStatusUI(openaiIndicator, openaiBadge, "checking");
+        document.getElementById("jdbcError").style.display = "none";
+        document.getElementById("openaiError").style.display = "none";
+        connectionsStatus.textContent = "Checking connections...";
+        refreshConnectionsBtn.disabled = true;
+
+        try {
+          const headers = { "Content-Type": "application/json" };
+          if (apiKey) {
+            headers["X-OpenAI-Api-Key"] = apiKey;
+          }
+
+          const response = await fetch("/api/connections/health", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ connection_id: connectionId }),
+          });
+
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.detail || `Request failed with status ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          // Update JDBC status
+          updateStatusUI(jdbcIndicator, jdbcBadge, data.jdbc.status);
+          document.getElementById("jdbcName").textContent = data.jdbc.name || "—";
+          document.getElementById("jdbcAccountId").textContent = data.jdbc.account_id || "—";
+          document.getElementById("jdbcHost").textContent = data.jdbc.host || "—";
+          document.getElementById("jdbcRoleId").textContent = data.jdbc.role_id || "—";
+          if (data.jdbc.error) {
+            const jdbcErrorEl = document.getElementById("jdbcError");
+            jdbcErrorEl.textContent = data.jdbc.error;
+            jdbcErrorEl.style.display = "block";
+          }
+
+          // Update OpenAI status
+          updateStatusUI(openaiIndicator, openaiBadge, data.openai.status);
+          document.getElementById("openaiModel").textContent = data.openai.model || "—";
+          if (data.openai.error) {
+            const openaiErrorEl = document.getElementById("openaiError");
+            openaiErrorEl.textContent = data.openai.error;
+            openaiErrorEl.style.display = "block";
+          }
+
+          connectionsStatus.textContent = "";
+        } catch (err) {
+          connectionsStatus.textContent = err.message;
+          updateStatusUI(jdbcIndicator, jdbcBadge, "error");
+          updateStatusUI(openaiIndicator, openaiBadge, "error");
+        } finally {
+          refreshConnectionsBtn.disabled = false;
+        }
+      };
+
+      refreshConnectionsBtn?.addEventListener("click", checkConnectionsHealth);
 
       const clearErrors = () => {
         loginStatus.textContent = "";
