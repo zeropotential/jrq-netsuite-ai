@@ -129,6 +129,59 @@
         gap: 12px;
         margin-bottom: 12px;
       }
+      .hidden {
+        display: none !important;
+      }
+      .login-screen {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+      }
+      .login-card {
+        width: min(520px, 92vw);
+        background: var(--panel);
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        padding: 22px;
+      }
+      .login-card h2 {
+        margin: 0 0 8px 0;
+        font-size: 20px;
+      }
+      .login-card p {
+        margin: 0 0 16px 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .login-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-top: 12px;
+      }
+      .field-error {
+        color: #b91c1c;
+        font-size: 12px;
+        margin-top: 4px;
+      }
+      .input-error {
+        border-color: #ef4444 !important;
+        background: #fef2f2;
+      }
+      .notice {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .chat-only .inputs,
+      .chat-only #runReportBtn,
+      .chat-only #exportCsvBtn,
+      .chat-only #exportXlsxBtn,
+      .chat-only #exportPdfBtn,
+      .chat-only .footer {
+        display: none !important;
+      }
       label {
         display: flex;
         flex-direction: column;
@@ -286,7 +339,29 @@
     </style>
   </head>
   <body>
-    <div class="layout">
+    <div id="loginScreen" class="login-screen">
+      <div class="login-card">
+        <h2>Connect to NetSuite</h2>
+        <p>Enter your JDBC Connection ID and OpenAI API Key to start chatting.</p>
+        <label>
+          JDBC Connection ID
+          <input id="loginConnectionId" placeholder="UUID from /admin/jdbc-connections" />
+          <span id="loginConnectionError" class="field-error"></span>
+        </label>
+        <label>
+          OpenAI API Key
+          <input id="loginOpenaiKey" type="password" placeholder="sk-..." autocomplete="off" />
+          <span id="loginOpenaiError" class="field-error"></span>
+        </label>
+        <div class="notice">Keys are used only in your browser session and sent to the API on each request.</div>
+        <div class="login-actions">
+          <button id="loginBtn">Continue</button>
+          <span id="loginStatus" class="footer"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="app" class="layout hidden">
       <aside class="sidebar">
         <div class="brand">
           <span class="brand-dot"></span>
@@ -317,6 +392,7 @@
             <label>
               JDBC Connection ID
               <input id="connectionId" placeholder="UUID from /admin/jdbc-connections" />
+              <span id="connectionError" class="field-error"></span>
             </label>
             <label>
               Schema Hint (optional)
@@ -325,6 +401,7 @@
             <label>
               OpenAI API Key (runtime only)
               <input id="openaiKey" type="password" placeholder="sk-..." autocomplete="off" />
+              <span id="openaiError" class="field-error"></span>
             </label>
           </div>
           <label>
@@ -361,9 +438,81 @@
       const exportPdfBtn = document.getElementById("exportPdfBtn");
       const openaiKeyEl = document.getElementById("openaiKey");
       const clearChatBtn = document.getElementById("clearChatBtn");
+      const loginScreen = document.getElementById("loginScreen");
+      const appEl = document.getElementById("app");
+      const loginBtn = document.getElementById("loginBtn");
+      const loginStatus = document.getElementById("loginStatus");
+      const loginConnectionId = document.getElementById("loginConnectionId");
+      const loginOpenaiKey = document.getElementById("loginOpenaiKey");
+      const loginConnectionError = document.getElementById("loginConnectionError");
+      const loginOpenaiError = document.getElementById("loginOpenaiError");
+      const connectionError = document.getElementById("connectionError");
+      const openaiError = document.getElementById("openaiError");
 
       // Session-based chat history (clears on page refresh)
       let chatHistory = [];
+
+      const clearErrors = () => {
+        loginStatus.textContent = "";
+        loginConnectionError.textContent = "";
+        loginOpenaiError.textContent = "";
+        connectionError.textContent = "";
+        openaiError.textContent = "";
+        loginConnectionId.classList.remove("input-error");
+        loginOpenaiKey.classList.remove("input-error");
+        document.getElementById("connectionId").classList.remove("input-error");
+        openaiKeyEl.classList.remove("input-error");
+      };
+
+      const validateConnectionId = (value) => {
+        // Basic UUID format check
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+      };
+
+      const validateOpenAiKey = (value) => {
+        return value.trim().startsWith("sk-") && value.trim().length >= 20;
+      };
+
+      const applyLogin = () => {
+        clearErrors();
+        const connectionId = loginConnectionId.value.trim();
+        const openaiKey = loginOpenaiKey.value.trim();
+        let hasError = false;
+        if (!connectionId) {
+          loginConnectionError.textContent = "JDBC Connection ID is required.";
+          loginConnectionId.classList.add("input-error");
+          hasError = true;
+        } else if (!validateConnectionId(connectionId)) {
+          loginConnectionError.textContent = "Invalid Connection ID format (UUID).";
+          loginConnectionId.classList.add("input-error");
+          hasError = true;
+        }
+        if (!openaiKey) {
+          loginOpenaiError.textContent = "OpenAI API Key is required.";
+          loginOpenaiKey.classList.add("input-error");
+          hasError = true;
+        } else if (!validateOpenAiKey(openaiKey)) {
+          loginOpenaiError.textContent = "Invalid API key format.";
+          loginOpenaiKey.classList.add("input-error");
+          hasError = true;
+        }
+        if (hasError) {
+          loginStatus.textContent = "Please fix the highlighted fields.";
+          return;
+        }
+        document.getElementById("connectionId").value = connectionId;
+        openaiKeyEl.value = openaiKey;
+        // Show app, hide login
+        loginScreen.classList.add("hidden");
+        appEl.classList.remove("hidden");
+        // Chat-only view
+        document.body.classList.add("chat-only");
+      };
+
+      loginBtn.addEventListener("click", applyLogin);
+      loginOpenaiKey.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") applyLogin();
+      });
 
       // Clear chat button handler
       clearChatBtn.addEventListener("click", () => {
@@ -497,12 +646,35 @@
       };
 
       const getPayload = () => {
+        clearErrors();
         const connectionId = document.getElementById("connectionId").value.trim();
         const scope = document.getElementById("scope").value.trim();
         const message = document.getElementById("message").value.trim();
 
         if (!message) {
           statusEl.textContent = "Message is required.";
+          return null;
+        }
+
+        if (!connectionId) {
+          connectionError.textContent = "Connection ID is required.";
+          document.getElementById("connectionId").classList.add("input-error");
+          return null;
+        }
+        if (!validateConnectionId(connectionId)) {
+          connectionError.textContent = "Invalid Connection ID format (UUID).";
+          document.getElementById("connectionId").classList.add("input-error");
+          return null;
+        }
+        const key = openaiKeyEl.value.trim();
+        if (!key) {
+          openaiError.textContent = "OpenAI API Key is required.";
+          openaiKeyEl.classList.add("input-error");
+          return null;
+        }
+        if (!validateOpenAiKey(key)) {
+          openaiError.textContent = "Invalid API key format.";
+          openaiKeyEl.classList.add("input-error");
           return null;
         }
 
