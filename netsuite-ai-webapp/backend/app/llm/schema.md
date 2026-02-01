@@ -44,6 +44,36 @@ Do **not** use the raw NetSuite table names in generated SQL. Use the column nam
 - To join transaction to transactionLine: `T.id = TL.transaction`
 - The FK column in transactionLine is just `transaction` (not `transaction_id`)
 
+### Amount Columns in transactionLine (CRITICAL):
+When working with amounts, use these NUMERIC columns from transactionLine:
+| Column | Type | Description |
+|--------|------|-------------|
+| amount | NUMBER | Line amount (use for SUM) |
+| foreignamount | NUMBER | Amount in foreign currency |
+| creditforeignamount | NUMBER | Credit amount in foreign currency |
+| debitforeignamount | NUMBER | Debit amount in foreign currency |
+
+**DO NOT use `netamount`** - it may not exist or may not be numeric.
+**For invoice totals**: Use `SUM(TL.amount)` instead of `SUM(TL.netamount)`
+
+### Example: Top 10 Invoices by Amount
+```sql
+SELECT TOP 10
+  T.id,
+  T.tranid,
+  T.trandate,
+  T.type,
+  SUM(TL.amount) AS invoice_total
+FROM transaction T
+INNER JOIN transactionLine TL ON T.id = TL.transaction
+WHERE T.type = 'CustInvc'
+  AND T.posting = 'T'
+  AND T.trandate >= TO_DATE('2025-12-01','YYYY-MM-DD')
+  AND T.trandate <= TO_DATE('2025-12-31','YYYY-MM-DD')
+GROUP BY T.id, T.tranid, T.trandate, T.type
+ORDER BY invoice_total DESC
+```
+
 ### Transaction Type Values (CRITICAL):
 When filtering by transaction type, use the `type` column with these values:
 | Type Value | Description |
