@@ -149,6 +149,24 @@ def generate_oracle_sql(
         {
             "type": "text",
             "text": (
+                "TRANSACTION QUERY PATTERN (MANDATORY):\n"
+                "When querying transaction data, ALWAYS join Transactions with Transaction_lines:\n"
+                "```\n"
+                "SELECT T.transaction_id, T.tranid, T.trandate, T.transaction_type, T.status,\n"
+                "       TL.transaction_line_id, TL.item_id, TL.amount, TL.net_amount, TL.item_count\n"
+                "FROM Transactions T\n"
+                "INNER JOIN Transaction_lines TL ON T.transaction_id = TL.transaction_id\n"
+                "WHERE <conditions>\n"
+                "```\n"
+                "- Transactions table has header info: dates, entity, status, memo, type\n"
+                "- Transaction_lines table has line details: amounts, quantities, items, accounts\n"
+                "- NEVER query Transactions alone when amounts, items, or quantities are needed\n"
+                "- Use LEFT JOIN only if you need transactions even without lines"
+            )
+        },
+        {
+            "type": "text",
+            "text": (
                 "TRANSACTION AND LINE RULES:\n"
                 "1. The main transaction table is 'Transactions' (primary key: transaction_id).\n"
                 "2. The line-level detail table is 'Transaction_lines' (composite PK: transaction_id + transaction_line_id).\n"
