@@ -57,18 +57,19 @@ def sync_accounts(db: Session, connection_id: str) -> dict[str, Any]:
     Sync Account table from NetSuite to PostgreSQL.
     
     Fetches all accounts (typically not many).
+    Uses SELECT * to get whatever columns exist and maps dynamically.
     """
     sync_log = _create_sync_log(db, connection_id, "account")
     
+    # Define which columns our PostgreSQL table has
+    pg_columns = {
+        "id", "acctnumber", "name", "fullname", "type", "accttype",
+        "specialaccttype", "isinactive", "issummary", "parent", "currency"
+    }
+    
     try:
-        # Query NetSuite for accounts
-        sql = """
-            SELECT 
-                id, acctnumber, name, fullname, type, accttype, 
-                specialaccttype, isinactive, issummary, parent, currency,
-                lastmodifieddate
-            FROM account
-        """
+        # Query NetSuite for accounts - use SELECT * to get all available columns
+        sql = "SELECT * FROM account"
         
         logger.info("Syncing accounts from NetSuite...")
         result = run_query(db, connection_id, sql, limit=10000)
@@ -80,33 +81,38 @@ def sync_accounts(db: Session, connection_id: str) -> dict[str, Any]:
             _complete_sync_log(db, sync_log, "success", rows_synced=0)
             return {"status": "success", "rows_synced": 0, "table": "account"}
         
-        # Prepare data for upsert
+        # Map columns dynamically - only include columns that exist in both
         col_lower = [c.lower() for c in columns]
+        available_cols = set(col_lower) & pg_columns
+        
+        if "id" not in available_cols:
+            raise ValueError("Account table must have 'id' column")
+        
+        logger.info(f"Account columns available: {available_cols}, NetSuite columns: {col_lower}")
+        
+        # Prepare records with only columns that exist in our PG table
         records = []
         for row in rows:
-            record = dict(zip(col_lower, row))
-            # Map lastmodifieddate to ns_last_modified
-            record["ns_last_modified"] = record.pop("lastmodifieddate", None)
+            full_record = dict(zip(col_lower, row))
+            # Only include columns that exist in our PG table
+            record = {k: v for k, v in full_record.items() if k in pg_columns}
+            # Handle lastmodifieddate -> ns_last_modified mapping if present
+            if "lastmodifieddate" in full_record:
+                record["ns_last_modified"] = full_record["lastmodifieddate"]
             records.append(record)
         
-        # Upsert into PostgreSQL (insert or update on conflict)
+        # Build dynamic upsert - only update columns that exist
         stmt = insert(NSAccount).values(records)
+        update_set = {"synced_at": text("now()")}
+        for col in available_cols:
+            if col != "id":  # Don't update the primary key
+                update_set[col] = getattr(stmt.excluded, col)
+        if "ns_last_modified" in [r.keys() for r in records][0] if records else False:
+            update_set["ns_last_modified"] = stmt.excluded.ns_last_modified
+        
         stmt = stmt.on_conflict_do_update(
             index_elements=["id"],
-            set_={
-                "acctnumber": stmt.excluded.acctnumber,
-                "name": stmt.excluded.name,
-                "fullname": stmt.excluded.fullname,
-                "type": stmt.excluded.type,
-                "accttype": stmt.excluded.accttype,
-                "specialaccttype": stmt.excluded.specialaccttype,
-                "isinactive": stmt.excluded.isinactive,
-                "issummary": stmt.excluded.issummary,
-                "parent": stmt.excluded.parent,
-                "currency": stmt.excluded.currency,
-                "ns_last_modified": stmt.excluded.ns_last_modified,
-                "synced_at": text("now()"),
-            }
+            set_=update_set
         )
         db.execute(stmt)
         
@@ -224,71 +230,101 @@ def sync_transaction_lines(
     """
     sync_log = _create_sync_log(db, connection_id, "transactionline")
     
+    # Define which columns our PostgreSQL table has
+    pg_columns = {
+        "id", "transaction", "linesequencenumber", "item",
+        "amount", "netamount", "foreignamount", "quantity",
+        "account", "department", "class", "location", "memo"
+    }
+    
     try:
         # Calculate date range (last N months)
         cutoff_date = datetime.utcnow() - timedelta(days=months_back * 30)
         date_str = cutoff_date.strftime("%Y-%m-%d")
         
-        # Query NetSuite for transaction lines (join with transaction for date filter)
-        sql = f"""
-            SELECT 
-                TL.id, TL.transaction, TL.linesequencenumber, TL.item,
-                TL.amount, TL.netamount, TL.foreignamount, TL.quantity,
-                TL.account, TL.department, TL.class, TL.location, TL.memo
-            FROM transactionline TL
-            INNER JOIN transaction T ON TL.transaction = T.id
-            WHERE T.createddate >= TO_DATE('{date_str}', 'YYYY-MM-DD')
+        # First, get transaction IDs from the date range
+        trans_sql = f"""
+            SELECT id FROM transaction
+            WHERE createddate >= TO_DATE('{date_str}', 'YYYY-MM-DD')
         """
         
-        logger.info(f"Syncing transaction lines from NetSuite (for transactions created since {date_str})...")
-        result = run_query(db, connection_id, sql, limit=500000)
+        logger.info(f"Getting transaction IDs since {date_str}...")
+        trans_result = run_query(db, connection_id, trans_sql, limit=100000)
+        trans_ids = [row[0] for row in trans_result.get("rows", [])]
         
-        rows = result.get("rows", [])
-        columns = result.get("columns", [])
-        
-        if not rows:
+        if not trans_ids:
             _complete_sync_log(db, sync_log, "success", rows_synced=0)
             return {"status": "success", "rows_synced": 0, "table": "transactionline"}
         
-        # Prepare data for upsert
-        col_lower = [c.lower() for c in columns]
-        records = []
-        for row in rows:
-            record = dict(zip(col_lower, row))
-            # Rename 'class' to 'class_' for SQLAlchemy (class is reserved)
-            if "class" in record:
-                record["class_"] = record.pop("class")
-            records.append(record)
+        logger.info(f"Found {len(trans_ids)} transactions, fetching lines...")
         
-        # Upsert into PostgreSQL - batch in chunks to avoid memory issues
-        batch_size = 5000
+        # Query transaction lines for those transactions - batch if too many
+        all_records = []
+        batch_size = 1000  # IDs per query
+        
+        for i in range(0, len(trans_ids), batch_size):
+            batch_ids = trans_ids[i:i + batch_size]
+            ids_str = ", ".join(str(tid) for tid in batch_ids)
+            
+            # Use SELECT * to get all available columns
+            sql = f"""
+                SELECT * FROM transactionline
+                WHERE transaction IN ({ids_str})
+            """
+            
+            result = run_query(db, connection_id, sql, limit=500000)
+            rows = result.get("rows", [])
+            columns = result.get("columns", [])
+            
+            if rows:
+                col_lower = [c.lower() for c in columns]
+                available_cols = set(col_lower) & pg_columns
+                
+                logger.info(f"TransactionLine columns available: {available_cols}, NetSuite columns: {col_lower}")
+                
+                for row in rows:
+                    full_record = dict(zip(col_lower, row))
+                    # Only include columns that exist in our PG table
+                    record = {k: v for k, v in full_record.items() if k in pg_columns}
+                    # Rename 'class' to 'class_' for SQLAlchemy (class is reserved)
+                    if "class" in record:
+                        record["class_"] = record.pop("class")
+                    all_records.append(record)
+        
+        if not all_records:
+            _complete_sync_log(db, sync_log, "success", rows_synced=0)
+            return {"status": "success", "rows_synced": 0, "table": "transactionline"}
+        
+        if "id" not in (set(all_records[0].keys()) | {"class_"} - {"class"}):
+            raise ValueError("TransactionLine must have 'id' column")
+        
+        # Get the available columns from first record for dynamic upsert
+        record_cols = set(all_records[0].keys()) - {"id"}  # Exclude id from update
+        
+        # Upsert into PostgreSQL - batch in chunks
+        insert_batch_size = 5000
         total_synced = 0
         
-        for i in range(0, len(records), batch_size):
-            batch = records[i:i + batch_size]
+        for i in range(0, len(all_records), insert_batch_size):
+            batch = all_records[i:i + insert_batch_size]
             
             stmt = insert(NSTransactionLine).values(batch)
+            
+            # Build dynamic update set based on available columns
+            update_set = {"synced_at": text("now()")}
+            for col in record_cols:
+                if col == "class_":
+                    update_set["class_"] = stmt.excluded.class_
+                else:
+                    update_set[col] = getattr(stmt.excluded, col)
+            
             stmt = stmt.on_conflict_do_update(
                 index_elements=["id"],
-                set_={
-                    "transaction": stmt.excluded.transaction,
-                    "linesequencenumber": stmt.excluded.linesequencenumber,
-                    "item": stmt.excluded.item,
-                    "amount": stmt.excluded.amount,
-                    "netamount": stmt.excluded.netamount,
-                    "foreignamount": stmt.excluded.foreignamount,
-                    "quantity": stmt.excluded.quantity,
-                    "account": stmt.excluded.account,
-                    "department": stmt.excluded.department,
-                    "class": stmt.excluded.class_,
-                    "location": stmt.excluded.location,
-                    "memo": stmt.excluded.memo,
-                    "synced_at": text("now()"),
-                }
+                set_=update_set
             )
             db.execute(stmt)
             total_synced += len(batch)
-            logger.info(f"Synced batch {i // batch_size + 1}: {len(batch)} lines (total: {total_synced})")
+            logger.info(f"Synced batch {i // insert_batch_size + 1}: {len(batch)} lines (total: {total_synced})")
         
         _complete_sync_log(db, sync_log, "success", rows_synced=total_synced)
         logger.info(f"Synced {total_synced} transaction lines")
