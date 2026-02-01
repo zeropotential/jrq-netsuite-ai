@@ -344,3 +344,92 @@ def clear_all_schema_cache() -> dict:
     """Clear all cached schemas."""
     clear_schema_cache()
     return {"status": "ok", "message": "All schema caches cleared"}
+
+
+# ============================================================================
+# NetSuite Data Sync Endpoints (PostgreSQL Mirror)
+# ============================================================================
+
+class SyncRequest(BaseModel):
+    months_back: int = Field(default=3, ge=1, le=24, description="Number of months of data to sync")
+    tables: list[str] | None = Field(default=None, description="Specific tables to sync (account, transaction, transactionline). If None, syncs all.")
+
+
+class SyncResponse(BaseModel):
+    status: str
+    tables: dict | None = None
+    total_rows: int | None = None
+    error: str | None = None
+
+
+@router.post("/jdbc-connections/{connection_id}/sync", response_model=SyncResponse)
+def sync_netsuite_data(
+    connection_id: str,
+    payload: SyncRequest | None = None,
+    db: Session = Depends(get_db),
+) -> SyncResponse:
+    """
+    Sync NetSuite data to local PostgreSQL tables.
+    
+    This pulls data from NetSuite via JDBC and stores it in local mirror tables
+    for fast querying. Only syncs transactions created in the last N months.
+    
+    Tables synced:
+    - account: All accounts
+    - transaction: Transactions created in last N months
+    - transactionline: Lines for those transactions
+    """
+    from app.netsuite.sync import sync_all, sync_accounts, sync_transactions, sync_transaction_lines
+    
+    payload = payload or SyncRequest()
+    
+    try:
+        if payload.tables:
+            # Sync specific tables
+            results = {}
+            for table in payload.tables:
+                if table == "account":
+                    results["account"] = sync_accounts(db, connection_id)
+                elif table == "transaction":
+                    results["transaction"] = sync_transactions(db, connection_id, payload.months_back)
+                elif table == "transactionline":
+                    results["transactionline"] = sync_transaction_lines(db, connection_id, payload.months_back)
+                else:
+                    return SyncResponse(status="error", error=f"Unknown table: {table}")
+            
+            db.commit()
+            all_success = all(r.get("status") == "success" for r in results.values())
+            return SyncResponse(
+                status="success" if all_success else "partial",
+                tables=results,
+                total_rows=sum(r.get("rows_synced", 0) for r in results.values()),
+            )
+        else:
+            # Sync all tables
+            result = sync_all(db, connection_id, payload.months_back)
+            db.commit()
+            return SyncResponse(**result)
+            
+    except Exception as e:
+        db.rollback()
+        return SyncResponse(status="error", error=str(e))
+
+
+class SyncStatusResponse(BaseModel):
+    connection_id: str
+    sync_logs: dict
+    row_counts: dict
+
+
+@router.get("/jdbc-connections/{connection_id}/sync/status", response_model=SyncStatusResponse)
+def get_sync_status(
+    connection_id: str,
+    db: Session = Depends(get_db),
+) -> SyncStatusResponse:
+    """
+    Get the sync status and row counts for the PostgreSQL mirror tables.
+    """
+    from app.netsuite.sync import get_sync_status as _get_sync_status
+    
+    result = _get_sync_status(db, connection_id)
+    return SyncStatusResponse(**result)

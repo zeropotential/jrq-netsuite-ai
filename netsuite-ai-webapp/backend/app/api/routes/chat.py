@@ -33,6 +33,7 @@ class ChatRequest(BaseModel):
     scope: str | None = None
     history: list[ChatMessage] = Field(default_factory=list, max_length=20)
     kb_entries: list[KnowledgeBaseEntry] = Field(default_factory=list, max_length=20)
+    query_mode: str = Field(default="netsuite", pattern="^(netsuite|postgres)$", description="Query mode: 'netsuite' for direct JDBC, 'postgres' for local mirror")
 
 
 class ChatResponse(BaseModel):
@@ -320,26 +321,43 @@ def chat(
                 logger.error(f"Error in netsuite help: {exc}\n{traceback.format_exc()}")
                 raise HTTPException(status_code=500, detail=f"Error generating response: {type(exc).__name__}: {exc}") from exc
 
-    # For data queries, require connection_id
-    if not payload.connection_id:
+    # For data queries, require connection_id (unless using postgres mode)
+    if not payload.connection_id and payload.query_mode == "netsuite":
         raise HTTPException(
             status_code=400, 
             detail="To query NetSuite data, please select a JDBC connection first."
         )
 
+    # Determine if we're using PostgreSQL mode
+    use_postgres = payload.query_mode == "postgres"
+    query_source = "postgres_mirror" if use_postgres else "netsuite_jdbc"
+
     # Generate SQL if not raw SQL
     sql = prompt
     if not is_raw_sql:
         try:
-            logger.info(f"Generating SQL for: {prompt[:50]}...")
-            result = generate_oracle_sql(
-                prompt=prompt,
-                schema_hint=payload.scope,
-                api_key=openai_api_key,
-                kb_context=_format_kb_context(payload.kb_entries),
-                db=db,
-                connection_id=payload.connection_id,
-            )
+            logger.info(f"Generating SQL for: {prompt[:50]}... (mode: {payload.query_mode})")
+            
+            if use_postgres:
+                # Use PostgreSQL schema for SQL generation
+                from app.netsuite.postgres_query import get_postgres_schema
+                result = generate_oracle_sql(
+                    prompt=prompt,
+                    schema_hint=get_postgres_schema(),  # Use PostgreSQL schema
+                    api_key=openai_api_key,
+                    kb_context=_format_kb_context(payload.kb_entries),
+                    db=db,
+                    connection_id=payload.connection_id,
+                )
+            else:
+                result = generate_oracle_sql(
+                    prompt=prompt,
+                    schema_hint=payload.scope,
+                    api_key=openai_api_key,
+                    kb_context=_format_kb_context(payload.kb_entries),
+                    db=db,
+                    connection_id=payload.connection_id,
+                )
             sql = result.sql
             logger.info(f"Generated SQL: {sql[:100]}...")
         except LlmError as exc:
@@ -360,20 +378,33 @@ def chat(
     # SELECT as ORDER BY, and wrapping can invalidate queries.
 
     try:
-        logger.info(f"Executing SQL: {sql[:100]}...")
-        result = run_query(db, payload.connection_id, sql, settings.netsuite_jdbc_row_limit)
+        logger.info(f"Executing SQL ({payload.query_mode} mode): {sql[:100]}...")
+        
+        if use_postgres:
+            # Execute against PostgreSQL mirror tables
+            from app.netsuite.postgres_query import execute_postgres_query
+            result = execute_postgres_query(db, sql, limit=settings.netsuite_jdbc_row_limit)
+            query_source = "postgres_mirror"
+        else:
+            # Execute against NetSuite JDBC
+            result = run_query(db, payload.connection_id, sql, settings.netsuite_jdbc_row_limit)
+            query_source = "netsuite_jdbc"
+            
     except JdbcError as exc:
         logger.error(f"JDBC error: {exc}")
         raise HTTPException(status_code=400, detail=f"{exc} | SQL: {sql}") from exc
+    except ValueError as exc:
+        logger.error(f"Query error: {exc}")
+        raise HTTPException(status_code=400, detail=f"{exc} | SQL: {sql}") from exc
     except Exception as exc:
         logger.error(f"Query execution error: {exc}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"JDBC query failed: {type(exc).__name__}: {exc} | SQL: {sql}") from exc
+        raise HTTPException(status_code=500, detail=f"Query failed: {type(exc).__name__}: {exc} | SQL: {sql}") from exc
 
     columns = result.get("columns", [])
     rows = result.get("rows", [])
     if not rows:
         answer = "Query executed successfully. No rows returned."
-        return ChatResponse(answer=answer, source="netsuite_jdbc", sql=sql, html=None)
+        return ChatResponse(answer=answer, source=query_source, sql=sql, html=None)
     
     # Generate text summary
     header = " | ".join(columns) if columns else "(no columns)"
@@ -398,5 +429,5 @@ def chat(
         logger.warning(f"Failed to generate HTML visualization: {exc}")
         # Continue without visualization - not a fatal error
 
-    logger.info(f"Chat response: {len(rows)} rows returned")
-    return ChatResponse(answer=answer, source="netsuite_jdbc", sql=sql, html=html_content)
+    logger.info(f"Chat response: {len(rows)} rows returned ({query_source})")
+    return ChatResponse(answer=answer, source=query_source, sql=sql, html=html_content)
