@@ -26,6 +26,55 @@ Do **not** use the raw NetSuite table names in generated SQL. Use the column nam
 - **Boolean fields**: Use `'T'` for true, `'F'` for false
 - **String literals**: Use single quotes `'value'`
 
+## Column Naming Convention (CRITICAL - LIVE DATABASE)
+
+**The LIVE NetSuite database uses NO UNDERSCORES in column names.** The documentation shows underscores but the actual JDBC/Connect columns are all lowercase without underscores.
+
+### Common Column Name Mappings (Documentation → LIVE):
+| Documentation Name | LIVE Column Name | Notes |
+|-------------------|-----------------|-------|
+| transaction_id | transaction_id | Exception - has underscore |
+| transaction_type | **type** | Use "type" not "transactiontype" |
+| trandate | trandate | Same |
+| is_non_posting | isnonposting | No underscores |
+| non_posting_line | nonpostingline | No underscores (transactionLine) |
+| create_date | createdate | No underscores |
+| last_modified_date | lastmodifieddate | No underscores |
+| entity_id | entity | Use "entity" for customer/vendor |
+| account_id | account | Use "account" for account reference |
+
+### Transaction Type Values (CRITICAL):
+When filtering by transaction type, use the `type` column with these values:
+| Type Value | Description |
+|-----------|-------------|
+| CustInvc | Customer Invoice |
+| CustCred | Credit Memo |
+| CustPymt | Customer Payment |
+| SalesOrd | Sales Order |
+| PurchOrd | Purchase Order |
+| VendBill | Vendor Bill |
+| VendCred | Vendor Credit |
+| VendPymt | Vendor Payment |
+| Journal | Journal Entry |
+| CashSale | Cash Sale |
+| Estimate | Quote/Estimate |
+| Opportunity | Opportunity |
+| ItemShip | Item Fulfillment |
+| ItemRcpt | Item Receipt |
+
+### Example Correct SQL:
+```sql
+-- Count invoices in 2025
+SELECT COUNT(DISTINCT T.transaction_id) AS invoice_count
+FROM transaction T
+INNER JOIN transactionLine TL ON T.transaction_id = TL.transaction
+WHERE T.type = 'CustInvc'
+  AND T.trandate >= TO_DATE('2025-01-01','YYYY-MM-DD')
+  AND T.trandate <= TO_DATE('2025-12-31','YYYY-MM-DD')
+  AND T.isnonposting = 'F'
+  AND TL.nonpostingline = 'F'
+```
+
 ## Browsers and Reference Links
 
 - Schema Browser: https://system.netsuite.com/help/helpcenter/en_US/srbrowser/Browser2024_2/odbc/record/transaction.html#schematab
