@@ -369,12 +369,14 @@
         margin-top: 12px;
         border: 1px solid var(--border);
         border-radius: 12px;
-        overflow: hidden;
-        background: #fff;
+        overflow: auto;
+        background: #f8fafc;
+        max-height: 1000px;
       }
       .viz-container iframe {
         width: 100%;
-        min-height: 400px;
+        min-height: 500px;
+        height: 600px;
         border: none;
         display: block;
       }
@@ -1017,14 +1019,19 @@
         
         // Auto-resize iframe after content loads
         iframe.onload = () => {
-          try {
-            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-            const height = iframeDoc.body.scrollHeight + 20;
-            iframe.style.height = Math.min(Math.max(height, 300), 800) + "px";
-          } catch (e) {
-            // Sandbox may prevent access, use default height
-            iframe.style.height = "500px";
-          }
+          const resizeIframe = () => {
+            try {
+              const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+              const height = iframeDoc.body.scrollHeight + 24;
+              iframe.style.height = Math.min(Math.max(height, 400), 1200) + "px";
+            } catch (e) {
+              // Sandbox may prevent access, use default height
+              iframe.style.height = "600px";
+            }
+          };
+          resizeIframe();
+          setTimeout(resizeIframe, 400);
+          setTimeout(resizeIframe, 1200);
         };
         
         // Set text content
