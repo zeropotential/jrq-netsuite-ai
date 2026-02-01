@@ -175,8 +175,8 @@ def discover_schema(
     
     # Get table names to process
     if table_filter:
-        # Use the filter directly - don't need to query OA_TABLES
-        table_names_to_process = [t.upper() for t in table_filter]
+        # Use the filter directly - preserve case as NetSuite is case-sensitive
+        table_names_to_process = list(table_filter)
         logger.info(f"Using table filter: {len(table_names_to_process)} tables")
     else:
         # Fetch all tables from OA_TABLES
@@ -187,8 +187,12 @@ def discover_schema(
         logger.warning("No tables to process")
         return tables
     
+    logger.info(f"Processing tables: {table_names_to_process[:10]}..." if len(table_names_to_process) > 10 else f"Processing tables: {table_names_to_process}")
+    
     # Fetch ALL columns for ALL tables in a SINGLE query (much faster!)
     all_columns = fetch_columns_for_tables(db, connection_id, table_names_to_process)
+    
+    logger.info(f"Column query returned data for tables: {list(all_columns.keys())}")
     
     # Build TableInfo for each table
     for table_name in table_names_to_process:
@@ -223,13 +227,17 @@ def discover_schema(
     elapsed = time.time() - start_time
     logger.info(f"Schema discovery completed in {elapsed:.2f}s: {len(tables)} tables")
     
-    # Update cache
-    with _cache_lock:
-        _schema_cache[connection_id] = SchemaCache(
-            tables=tables,
-            fetched_at=time.time(),
-            connection_id=connection_id
-        )
+    # Only cache if we actually found tables (don't cache empty results)
+    if tables:
+        with _cache_lock:
+            _schema_cache[connection_id] = SchemaCache(
+                tables=tables,
+                fetched_at=time.time(),
+                connection_id=connection_id
+            )
+        logger.info(f"Cached {len(tables)} tables for connection {connection_id}")
+    else:
+        logger.warning(f"No tables discovered - NOT caching empty result for {connection_id}")
     
     return tables
 

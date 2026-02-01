@@ -102,20 +102,21 @@ class SchemaDiscoveryRequest(BaseModel):
 
 
 # Default tables to fetch (transaction-focused for common queries)
+# NOTE: NetSuite OA_TABLES/OA_COLUMNS uses mixed case - these are the actual table names
 DEFAULT_TRANSACTION_TABLES = [
-    "TRANSACTIONS",
-    "TRANSACTION_LINES", 
-    "TRANSACTION_LINKS",
-    "ACCOUNTS",
-    "ITEMS",
-    "ENTITIES",
-    "SUBSIDIARIES",
-    "DEPARTMENTS",
-    "CLASSES",
-    "LOCATIONS",
-    "CUSTOMERS",
-    "VENDORS",
-    "EMPLOYEES",
+    "Transactions",
+    "Transaction_lines", 
+    "Transaction_links",
+    "Accounts",
+    "Items",
+    "Entity",
+    "Subsidiaries",
+    "Departments",
+    "Classes",
+    "Locations",
+    "Customers",
+    "Vendors",
+    "Employees",
 ]
 
 
