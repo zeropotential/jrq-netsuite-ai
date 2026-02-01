@@ -139,11 +139,11 @@ def test_schema_access(
     
     try:
         # Just fetch first 10 table names - quick sanity check
-        # Note: NetSuite doesn't support ROWNUM, use FETCH FIRST instead
+        # Note: NetSuite uses TOP N syntax (not ROWNUM or FETCH FIRST)
         result = run_query(
             db, 
             connection_id, 
-            "SELECT TABLE_NAME FROM OA_TABLES FETCH FIRST 10 ROWS ONLY",
+            "SELECT TOP 10 TABLE_NAME FROM OA_TABLES",
             limit=10
         )
         rows = result.get("rows", [])

@@ -14,11 +14,13 @@ Do **not** use the raw NetSuite table names in generated SQL. Use the column nam
 
 ## SQL Syntax Rules (CRITICAL)
 
-- **DO NOT use ROWNUM** - NetSuite SuiteAnalytics Connect does NOT support Oracle's ROWNUM
-- **Use FETCH FIRST N ROWS ONLY** for limiting results:
+- **Use TOP N for limiting results** - NetSuite SuiteAnalytics Connect uses TOP syntax:
   ```sql
-  SELECT * FROM transaction FETCH FIRST 100 ROWS ONLY
+  SELECT TOP 100 * FROM transaction
   ```
+- **DO NOT use ROWNUM** - Oracle's ROWNUM is NOT supported
+- **DO NOT use FETCH FIRST** - Standard SQL FETCH FIRST is NOT supported
+- **DO NOT use LIMIT** - MySQL/PostgreSQL LIMIT is NOT supported
 - **Use standard SQL-92 syntax** - JOINs, WHERE, GROUP BY, ORDER BY
 - **Date format**: Use `TO_DATE('2024-01-01', 'YYYY-MM-DD')` for date literals
 - **Boolean fields**: Use `'T'` for true, `'F'` for false
