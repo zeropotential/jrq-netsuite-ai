@@ -776,4 +776,384 @@ Transaction_shipping_groups
 Transaction_tax_detail
 Transaction_tracking_numbers
 Transactions
-</userRequest>
+
+---
+
+# Accounts
+
+This section documents the **Accounts** table for SuiteAnalytics Connect (JDBC).
+
+## Browsers and Reference Links
+
+- Schema Browser: https://system.netsuite.com/help/helpcenter/en_US/srbrowser/Browser2024_2/odbc/record/account.html#schematab
+- Records Browser: https://system.netsuite.com/help/helpcenter/en_US/srbrowser/Browser2024_2/odbc/record/account.html#scripttab
+- Connect Browser: https://system.netsuite.com/help/helpcenter/en_US/srbrowser/Browser2024_2/odbc/record/account.html#browsertab
+- Analytics Browser: https://system.netsuite.com/help/helpcenter/en_US/srbrowser/Browser2024_2/odbc/record/account.html#analyticstab
+
+## Accounts Table – Key Notes
+
+- The **Other Custom Fields > Account** custom field is available for the Accounts table.
+- To obtain the subsidiaries for accounts, use the **Account_subsidiary_map** table.
+- JOIN to Transaction_lines using: `Transaction_lines.account_id = Accounts.account_id`
+
+## Accounts – Columns
+
+| Name | Type | Length | Precision | Scale | References | In | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| account_extid | VARCHAR2 | 255 |  |  |  |  | Account external ID |
+| account_id | NUMBER |  | 39 | 0 |  |  | Account ID (Primary Key) |
+| accountnumber | VARCHAR2 | 60 |  |  |  |  | Account number |
+| cashflow_rate_type | VARCHAR2 | 10 |  |  |  |  | Cash flow rate type |
+| category_1099_misc | VARCHAR2 | 60 |  |  |  |  | 1099-MISC category |
+| category_1099_misc_mthreshold | NUMBER |  | 20 | 2 |  |  | 1099-MISC category threshold |
+| class_id | NUMBER |  | 39 | 0 | class_id | Classes | Restrict to class |
+| currency_id | NUMBER |  | 39 | 0 | currency_id | Currencies | Currency ID |
+| date_last_modified | TIMESTAMP |  |  |  |  |  | Date last modified |
+| deferral_account_id | NUMBER |  | 39 | 0 | account_id | Accounts | Deferral account ID |
+| department_id | NUMBER |  | 39 | 0 | department_id | Departments | Restrict to department |
+| description | VARCHAR2 | 25 |  |  |  |  | Description |
+| full_description | VARCHAR2 | 60 |  |  |  |  | Full description |
+| full_name | VARCHAR2 | 4000 |  |  |  |  | Full name |
+| general_rate_type | VARCHAR2 | 10 |  |  |  |  | General rate type |
+| is_balancesheet | VARCHAR2 | 1 |  |  |  |  | Is balance sheet |
+| is_included_in_elimination | VARCHAR2 | 1 |  |  |  |  | Include in elimination |
+| is_included_in_reval | VARCHAR2 | 1 |  |  |  |  | Include in revaluation |
+| is_including_child_subs | VARCHAR2 | 3 |  |  |  |  | Whether includes child subsidiaries |
+| is_leftside | VARCHAR2 | 1 |  |  |  |  | Is debit |
+| is_summary | VARCHAR2 | 3 |  |  |  |  | Whether is a summary account |
+| isinactive | VARCHAR2 | 3 |  |  |  |  | Account is inactive |
+| legal_name | VARCHAR2 | 400 |  |  |  |  | Legal name |
+| location_id | NUMBER |  | 39 | 0 | location_id | Locations | Restrict to location |
+| name | VARCHAR2 | 93 |  |  |  |  | Name |
+| openbalance | NUMBER |  | 39 | 0 |  |  | Opening balance |
+| parent_id | NUMBER |  | 39 | 0 | account_id | Accounts | Subaccount of (parent account) |
+| type_name | VARCHAR2 | 128 |  |  |  |  | Type name (e.g., Bank, Accounts Receivable, Income, Expense) |
+| type_sequence | NUMBER |  | 39 | 0 |  |  | Type sequence |
+
+## Primary key
+
+| PK Column Name |
+| --- |
+| account_id |
+
+## Foreign keys in this table
+
+| FK Name | FK Column Name | PK Table Name | PK Column Name | Key Seq |
+| --- | --- | --- | --- | --- |
+| accounts_accounts_fk | deferral_account_id | Accounts | account_id | 1 |
+| accounts_accounts_fk_2 | parent_id | Accounts | account_id | 1 |
+| accounts_classes_fk | class_id | Classes | class_id | 1 |
+| accounts_currencies_fk | currency_id | Currencies | currency_id | 1 |
+| accounts_departments_fk | department_id | Departments | department_id | 1 |
+| accounts_locations_fk | location_id | Locations | location_id | 1 |
+
+## Foreign keys referencing this table
+
+| FK Name | PK Column Name | FK Table Name | FK Column Name | Key Seq |
+| --- | --- | --- | --- | --- |
+| Transaction_lines_accounts_fk | account_id | Transaction_lines | account_id | 1 |
+| Transaction_history_accounts_fk | account_id | Transaction_history | account_id | 1 |
+| Transactions_accounts_fk | account_id | Transactions | acct_corp_card_expenses_id | 1 |
+| Budget_accounts_fk | account_id | Budget | account_id | 1 |
+| Account_activity_accounts_fk | account_id | Account_activity | account_id | 1 |
+| Account_period_activity_accounts_fk | account_id | Account_period_activity | account_id | 1 |
+
+## This table is included in the following domains
+
+| Domains |
+| --- |
+| Expense_amortization |
+| General_accounting |
+| Invoice_with_amortization |
+| Multibooks |
+| Revenue_recognition |
+
+## Common JOIN Pattern with Transaction_lines
+
+```sql
+SELECT 
+    T.transaction_id,
+    T.tranid,
+    T.trandate,
+    TL.transaction_line_id,
+    TL.amount,
+    A.account_id,
+    A.accountnumber,
+    A.name AS account_name,
+    A.type_name AS account_type
+FROM Transactions T
+INNER JOIN Transaction_lines TL ON T.transaction_id = TL.transaction_id
+INNER JOIN Accounts A ON TL.account_id = A.account_id
+WHERE <conditions>
+```
+
+Generated on 2024-11-25 for version 2024.2
+
+---
+
+# Customers
+
+This section documents the **Customers** table for SuiteAnalytics Connect (JDBC).
+
+## Browsers and Reference Links
+
+- Schema Browser: https://system.netsuite.com/help/helpcenter/en_US/srbrowser/Browser2024_2/odbc/record/customer.html#schematab
+- Records Browser: https://system.netsuite.com/help/helpcenter/en_US/srbrowser/Browser2024_2/odbc/record/customer.html#scripttab
+- Connect Browser: https://system.netsuite.com/help/helpcenter/en_US/srbrowser/Browser2024_2/odbc/record/customer.html#browsertab
+- Analytics Browser: https://system.netsuite.com/help/helpcenter/en_US/srbrowser/Browser2024_2/odbc/record/customer.html#analyticstab
+
+## Customers Table – Key Notes
+
+- The **Entity Fields** custom field is available for the Customers table.
+- JOIN to Transactions using: `Transactions.entity_id = Customers.customer_id`
+- JOIN to Transaction_lines using: `Transaction_lines.company_id = Customers.customer_id`
+
+## Customers – Columns
+
+| Name | Type | Length | Precision | Scale | References | In | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| accountnumber | VARCHAR2 | 99 |  |  |  |  | Account number |
+| alcohol_recipient_type | VARCHAR2 | 32 |  |  |  |  | Alcohol recipient type |
+| allow_task_time_for_allocation | VARCHAR2 | 3 |  |  |  |  | Allow task time for allocation |
+| altemail | VARCHAR2 | 254 |  |  |  |  | Alternate email address |
+| alternate_contact_id | NUMBER |  | 39 | 0 | contact_id | Contacts | Alternate contact |
+| altphone | VARCHAR2 | 100 |  |  |  |  | Alternate phone |
+| amount_complete | NUMBER |  | 5 | 2 |  |  | Amount complete |
+| billaddress | VARCHAR2 | 999 |  |  |  |  | Billing address |
+| billing_rate_card_id | NUMBER |  | 39 | 0 | billing_rate_card_id | Billing_rate_cards | Billing rate card ID |
+| billing_schedule_id | NUMBER |  | 39 | 0 | billing_schedule_id | Billing_schedule_descriptions | Billing schedule ID |
+| billing_schedule_type | VARCHAR2 | 60 |  |  |  |  | Billing type |
+| billing_transaction_type | VARCHAR2 | 192 |  |  |  |  | Billing transaction type |
+| calculated_end | TIMESTAMP |  |  |  |  |  | Estimated end date |
+| category_0 | VARCHAR2 | 30 |  |  |  |  | Status (Customer Stage) |
+| city | VARCHAR2 | 50 |  |  |  |  | City |
+| comments | VARCHAR2 | 4000 |  |  |  |  | Comments |
+| companyname | VARCHAR2 | 83 |  |  |  |  | Company name |
+| consol_days_overdue | NUMBER |  | 39 | 0 |  |  | Consolidated days overdue |
+| consol_deposit_balance | NUMBER |  | 39 | 0 |  |  | Consolidated deposit balance |
+| consol_deposit_balance_foreign | NUMBER |  | 39 | 0 |  |  | Consolidated foreign currency deposit balance |
+| consol_openbalance | NUMBER |  | 39 | 0 |  |  | Consolidated balance (sum of subcustomer balances in company currency) |
+| consol_openbalance_foreign | NUMBER |  | 39 | 0 |  |  | Consolidated foreign currency balance (sum in parent customer's primary currency) |
+| consol_unbilled_orders | NUMBER |  | 39 | 0 |  |  | Consolidated unbilled orders |
+| consol_unbilled_orders_foreign | NUMBER |  | 39 | 0 |  |  | Consolidated foreign currency unbilled orders |
+| converted_to_contact_id | NUMBER |  | 39 | 0 | entity_id | Entity | Contact the lead was converted to |
+| converted_to_id | NUMBER |  | 39 | 0 | entity_id | Entity | Customer the lead was converted to |
+| cost_estimate | NUMBER |  | 25 | 5 |  |  | Cost estimate |
+| country | VARCHAR2 | 50 |  |  |  |  | Country |
+| create_date | TIMESTAMP |  |  |  |  |  | Create date (GMT) |
+| credithold | VARCHAR2 | 4 |  |  |  |  | Credit hold |
+| creditlimit | NUMBER |  | 20 | 2 |  |  | Credit limit |
+| currency_id | NUMBER |  | 39 | 0 | currency_id | Currencies | Currency ID |
+| customer_extid | VARCHAR2 | 255 |  |  |  |  | Customer external ID |
+| customer_id | NUMBER |  | 39 | 0 |  |  | Customer ID (Primary Key) |
+| customer_type_id | NUMBER |  | 39 | 0 | customer_type_id | Customer_types | Category |
+| date_calculated_start | TIMESTAMP |  |  |  |  |  | Calculated start date |
+| date_closed | TIMESTAMP |  |  |  |  |  | Date closed (GMT) |
+| date_convsersion | TIMESTAMP |  |  |  |  |  | Conversion from lead date (GMT) |
+| date_first_order | TIMESTAMP |  |  |  |  |  | Date of first order (GMT) |
+| date_first_sale | TIMESTAMP |  |  |  |  |  | Date of first sale (GMT) |
+| date_gross_lead | TIMESTAMP |  |  |  |  |  | Gross lead date (GMT) |
+| date_last_modified | TIMESTAMP |  |  |  |  |  | Date last modified |
+| date_last_order | TIMESTAMP |  |  |  |  |  | Last sales order date (GMT) |
+| date_last_sale | TIMESTAMP |  |  |  |  |  | Last sale (cash sale, invoice) date (GMT) |
+| date_lead | TIMESTAMP |  |  |  |  |  | Lead date (GMT) |
+| date_prospect | TIMESTAMP |  |  |  |  |  | Prospect date (GMT) |
+| date_scheduled_end | TIMESTAMP |  |  |  |  |  | Scheduled end date |
+| days_overdue | NUMBER |  | 39 | 0 |  |  | Days overdue (GMT) |
+| default_order_priority | NUMBER |  | 20 | 2 |  |  | Default order priority |
+| default_receivables_account_id | NUMBER |  | 39 | 0 | account_id | Accounts | Default receivables account |
+| deposit_balance | NUMBER |  | 20 | 2 |  |  | Deposit balance |
+| deposit_balance_foreign | NUMBER |  | 39 | 0 |  |  | Foreign currency deposit balance |
+| email | VARCHAR2 | 254 |  |  |  |  | Email |
+| expected_close | TIMESTAMP |  |  |  |  |  | Expected close date |
+| fax | VARCHAR2 | 100 |  |  |  |  | Fax |
+| first_sale_period_id | NUMBER |  | 39 | 0 | accounting_period_id | Accounting_periods | Accounting period of first sale |
+| first_visit | TIMESTAMP |  |  |  |  |  | First visit |
+| firstname | VARCHAR2 | 32 |  |  |  |  | First name |
+| forecast_based_on_allocations | VARCHAR2 | 3 |  |  |  |  | Use Allocated Time for Forecast switch |
+| forecast_charge_run_on_demand | VARCHAR2 | 3 |  |  |  |  | Forecast Charge Run on Demand switch |
+| full_name | VARCHAR2 | 1800 |  |  |  |  | Full name |
+| home_phone | VARCHAR2 | 100 |  |  |  |  | Home phone |
+| is_exempt_time | VARCHAR2 | 3 |  |  |  |  | Exempt time |
+| is_explicit_conversion | VARCHAR2 | 3 |  |  |  |  | Explicitly converted from lead |
+| is_job | VARCHAR2 | 3 |  |  |  |  | Job |
+| is_limit_time_to_assignees | VARCHAR2 | 3 |  |  |  |  | Only project resources can enter time/expenses |
+| is_person | VARCHAR2 | 3 |  |  |  |  | Type (company or individual) |
+| is_productive_time | VARCHAR2 | 3 |  |  |  |  | Is productive time |
+| is_project_completely_billed | VARCHAR2 | 3 |  |  |  |  | Is project completely billed |
+| is_source_item_from_brc | VARCHAR2 | 3 |  |  |  |  | Service item sourced from billing rate card |
+| is_utilized_time | VARCHAR2 | 3 |  |  |  |  | Is utilized time |
+| isemailhtml | VARCHAR2 | 3 |  |  |  |  | Email as HTML |
+| isemailpdf | VARCHAR2 | 3 |  |  |  |  | Email as PDF |
+| isinactive | VARCHAR2 | 3 |  |  |  |  | Customer is inactive |
+| istaxable | VARCHAR2 | 3 |  |  |  |  | Taxable |
+| job_end | TIMESTAMP |  |  |  |  |  | End date |
+| job_start | TIMESTAMP |  |  |  |  |  | Start date |
+| job_type_id | NUMBER |  | 39 | 0 | job_type_id | Job_types | Job type ID |
+| labor_budget_from_allocations | VARCHAR2 | 3 |  |  |  |  | Labor budget from allocations |
+| language_id | VARCHAR2 | 30 |  |  |  |  | Language ID |
+| last_modified_date | TIMESTAMP |  |  |  |  |  | Last modified date (GMT) |
+| last_sale_period_id | NUMBER |  | 39 | 0 | accounting_period_id | Accounting_periods | Accounting period of last sale |
+| last_visit | TIMESTAMP |  |  |  |  |  | Last visit |
+| lastname | VARCHAR2 | 32 |  |  |  |  | Last name |
+| lead_source_id | NUMBER |  | 39 | 0 | campaign_id | Campaigns | Lead source ID |
+| line1 | VARCHAR2 | 150 |  |  |  |  | Address line 1 |
+| line2 | VARCHAR2 | 150 |  |  |  |  | Address line 2 |
+| line3 | VARCHAR2 | 150 |  |  |  |  | Address line 3 |
+| loginaccess | VARCHAR2 | 3 |  |  |  |  | Login Access |
+| middlename | VARCHAR2 | 32 |  |  |  |  | Middle name |
+| mobile_phone | VARCHAR2 | 100 |  |  |  |  | Mobile phone |
+| multiple_price_id | NUMBER |  | 39 | 0 |  |  | Multiple price ID |
+| name | VARCHAR2 | 83 |  |  |  |  | Name |
+| openbalance | NUMBER |  | 39 | 0 |  |  | Balance |
+| openbalance_foreign | NUMBER |  | 39 | 0 |  |  | Foreign currency balance |
+| parent_id | NUMBER |  | 39 | 0 | entity_id | Entity | Child of (parent customer) |
+| partner_id | NUMBER |  | 39 | 0 | partner_id | Partners | Partner ID |
+| payment_terms_id | NUMBER |  | 39 | 0 | payment_terms_id | Payment_terms | Payment terms |
+| phone | VARCHAR2 | 100 |  |  |  |  | Phone |
+| primary_contact_id | NUMBER |  | 39 | 0 | contact_id | Contacts | Primary contact |
+| print_on_check_as | VARCHAR2 | 83 |  |  |  |  | Print on check as |
+| probability | NUMBER |  | 6 | 2 |  |  | Probability |
+| project_expense_type_id | NUMBER |  | 39 | 0 | project_expense_type_id | Project_expense_types | Project expense type ID |
+| project_manager_id | NUMBER |  | 39 | 0 | employee_id | Employees | Project manager ID |
+| projected_end | TIMESTAMP |  |  |  |  |  | Projected end |
+| referrer | VARCHAR2 | 4000 |  |  |  |  | Referrer |
+| reminderdays | NUMBER |  | 39 | 0 |  |  | Reminder days |
+| renewal | TIMESTAMP |  |  |  |  |  | Renewal |
+| represents_subsidiary_id | NUMBER |  | 39 | 0 | subsidiary_id | Subsidiaries | Represents subsidiary ID |
+| resalenumber | VARCHAR2 | 20 |  |  |  |  | Resale number |
+| rev_rec_forecast_rule_id | NUMBER |  | 39 | 0 |  |  | Revenue recognition forecast rule ID |
+| rev_rec_forecast_template | NUMBER |  | 39 | 0 | schedule_id | Revrecschedules | Revenue recognition forecast template |
+| revenue_estimate | NUMBER |  | 25 | 5 |  |  | Revenue estimate |
+| sales_rep_id | NUMBER |  | 39 | 0 | entity_id | Entity | Sales rep ID |
+| sales_territory_id | NUMBER |  | 39 | 0 | territory_id | Territory | Sales territory ID |
+| salutation | VARCHAR2 | 30 |  |  |  |  | Salutation |
+| scheduling_method_id | VARCHAR2 | 15 |  |  |  |  | Project scheduling method |
+| ship_complete | VARCHAR2 | 3 |  |  |  |  | Ship complete |
+| shipaddress | VARCHAR2 | 999 |  |  |  |  | Shipping address |
+| state | VARCHAR2 | 50 |  |  |  |  | State |
+| status | VARCHAR2 | 199 |  |  |  |  | Status |
+| status_descr | VARCHAR2 | 199 |  |  |  |  | Status description |
+| status_probability | NUMBER |  | 6 | 2 |  |  | Status probability |
+| status_read_only | VARCHAR2 | 3 |  |  |  |  | Read only status |
+| subsidiary_id | NUMBER |  | 39 | 0 | subsidiary_id | Subsidiaries | Subsidiary ID |
+| tax_item_id | NUMBER |  | 39 | 0 | item_id | Items | Tax item ID |
+| third_party_acct | VARCHAR2 | 32 |  |  |  |  | Third party account |
+| third_party_carrier | VARCHAR2 | 64 |  |  |  |  | Third party carrier |
+| third_party_country | VARCHAR2 | 6 |  |  |  |  | Third party country |
+| third_party_zip_code | VARCHAR2 | 10 |  |  |  |  | Third party zip code |
+| time_approval_type_id | NUMBER |  | 39 | 0 | project_time_approval_type_id | Project_time_approval_types | Time approval type ID |
+| top_level_parent_id | NUMBER |  | 39 | 0 | customer_id | Customers | Top level parent ID |
+| unbilled_orders | NUMBER |  | 20 | 2 |  |  | Unbilled orders |
+| unbilled_orders_foreign | NUMBER |  | 39 | 0 |  |  | Unbilled foreign currency orders |
+| url | VARCHAR2 | 100 |  |  |  |  | Web address |
+| use_calculated_billing_budget | VARCHAR2 | 3 |  |  |  |  | Use calculated billing budget |
+| use_calculated_cost_budget | VARCHAR2 | 3 |  |  |  |  | Use calculated cost budget |
+| use_percent_complete_override | VARCHAR2 | 3 |  |  |  |  | Use percent complete override |
+| vat_reg_number | VARCHAR2 | 20 |  |  |  |  | VAT identification number |
+| web_lead | VARCHAR2 | 3 |  |  |  |  | Web lead |
+| zipcode | VARCHAR2 | 36 |  |  |  |  | Zip code |
+
+## Primary key
+
+| PK Column Name |
+| --- |
+| customer_id |
+
+## Foreign keys in this table
+
+| FK Name | FK Column Name | PK Table Name | PK Column Name | Key Seq |
+| --- | --- | --- | --- | --- |
+| customers_accounting_periods_fk | first_sale_period_id | Accounting_periods | accounting_period_id | 1 |
+| customers_accounting_periods_fk_2 | last_sale_period_id | Accounting_periods | accounting_period_id | 1 |
+| customers_accounts_fk | default_receivables_account_id | Accounts | account_id | 1 |
+| customers_billing_rate_cards_fk | billing_rate_card_id | Billing_rate_cards | billing_rate_card_id | 1 |
+| customers_billing_schedule_descriptions_fk | billing_schedule_id | Billing_schedule_descriptions | billing_schedule_id | 1 |
+| customers_campaigns_fk | lead_source_id | Campaigns | campaign_id | 1 |
+| customers_contacts_fk | primary_contact_id | Contacts | contact_id | 1 |
+| customers_contacts_fk_2 | alternate_contact_id | Contacts | contact_id | 1 |
+| customers_currencies_fk | currency_id | Currencies | currency_id | 1 |
+| customers_customer_types_fk | customer_type_id | Customer_types | customer_type_id | 1 |
+| customers_employees_fk | project_manager_id | Employees | employee_id | 1 |
+| customers_entity_fk | converted_to_id | Entity | entity_id | 1 |
+| customers_entity_fk_2 | converted_to_contact_id | Entity | entity_id | 1 |
+| customers_entity_fk_3 | sales_rep_id | Entity | entity_id | 1 |
+| customers_entity_fk_4 | parent_id | Entity | entity_id | 1 |
+| customers_items_fk | tax_item_id | Items | item_id | 1 |
+| customers_job_types_fk | job_type_id | Job_types | job_type_id | 1 |
+| customers_partners_fk | partner_id | Partners | partner_id | 1 |
+| customers_payment_terms_fk | payment_terms_id | Payment_terms | payment_terms_id | 1 |
+| customers_project_expense_types_fk | project_expense_type_id | Project_expense_types | project_expense_type_id | 1 |
+| customers_project_time_approval_types_fk | time_approval_type_id | Project_time_approval_types | project_time_approval_type_id | 1 |
+| customers_revrecschedules_fk | rev_rec_forecast_template | Revrecschedules | schedule_id | 1 |
+| customers_subsidiaries_fk | subsidiary_id | Subsidiaries | subsidiary_id | 1 |
+| customers_subsidiaries_fk_2 | represents_subsidiary_id | Subsidiaries | subsidiary_id | 1 |
+| customers_territory_fk | sales_territory_id | Territory | territory_id | 1 |
+| top_level_customer_fk | top_level_parent_id | Customers | customer_id | 1 |
+
+## Foreign keys referencing this table
+
+| FK Name | PK Column Name | FK Table Name | FK Column Name | Key Seq |
+| --- | --- | --- | --- | --- |
+| Billing_rate_cards_customers_fk | customer_id | Billing_rate_cards | customer_id | 1 |
+| Billing_subscriptions_customers_fk | customer_id | Billing_subscriptions | customer_id | 1 |
+| Budget_customers_fk | customer_id | Budget | customer_id | 1 |
+| Customer_currencies_customers_fk | customer_id | Customer_currencies | customer_id | 1 |
+| Customer_subsidiary_map_customers_fk | customer_id | Customer_subsidiary_map | customer_id | 1 |
+| Employee_time_customers_fk | customer_id | Employee_time | customer_id | 1 |
+| Project_revenue_rules_customers_fk | customer_id | Project_revenue_rules | project_id | 1 |
+| Purchase_charge_rules_customers_fk | customer_id | Purchase_charge_rules | project_id | 1 |
+| Top_level_customer_fk | customer_id | Customers | top_level_parent_id | 1 |
+| Transaction_lines_customers_fk | customer_id | Transaction_lines | company_id | 1 |
+| Transactions_customers_fk | customer_id | Transactions | entity_id | 1 |
+
+## This table is included in the following domains
+
+| Domains |
+| --- |
+| Campaigns |
+| Campaignevents |
+| General_accounting |
+| Multibooks |
+| Revenue_recognition |
+
+## Common JOIN Pattern with Transactions
+
+```sql
+SELECT 
+    T.transaction_id,
+    T.tranid,
+    T.trandate,
+    T.transaction_type,
+    C.customer_id,
+    C.companyname,
+    C.name AS customer_name,
+    C.email,
+    C.phone,
+    C.city,
+    C.state,
+    C.country
+FROM Transactions T
+INNER JOIN Transaction_lines TL ON T.transaction_id = TL.transaction_id
+INNER JOIN Customers C ON T.entity_id = C.customer_id
+WHERE T.transaction_type IN ('CustInvc', 'SalesOrd', 'CashSale')
+```
+
+## Common JOIN Pattern with Transaction_lines (company_id)
+
+```sql
+SELECT 
+    T.transaction_id,
+    T.tranid,
+    TL.transaction_line_id,
+    TL.amount,
+    C.customer_id,
+    C.companyname,
+    C.name AS customer_name
+FROM Transactions T
+INNER JOIN Transaction_lines TL ON T.transaction_id = TL.transaction_id
+INNER JOIN Customers C ON TL.company_id = C.customer_id
+WHERE <conditions>
+```
+
+Generated on 2024-11-25 for version 2024.2
