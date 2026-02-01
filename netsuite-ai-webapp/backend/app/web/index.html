@@ -360,6 +360,37 @@
         0%, 50% { opacity: 1; }
         51%, 100% { opacity: 0; }
       }
+      /* Visualization container */
+      .viz-container {
+        margin-top: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        background: #fff;
+      }
+      .viz-container iframe {
+        width: 100%;
+        min-height: 400px;
+        border: none;
+        display: block;
+      }
+      .viz-toggle {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .viz-toggle button {
+        padding: 6px 12px;
+        font-size: 12px;
+        background: var(--soft);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .viz-toggle button.active {
+        background: var(--accent);
+        color: white;
+        border-color: var(--accent);
+      }
     </style>
   </head>
   <body>
@@ -947,6 +978,73 @@
         return div;
       };
 
+      // Add message with HTML visualization (charts, tables, graphs)
+      const addMessageWithVisualization = async (label, text, source, html) => {
+        const vizId = "viz-" + Date.now();
+        const div = document.createElement("div");
+        const isAssistant = label.toLowerCase() === "assistant";
+        const avatarClass = isAssistant ? "assistant" : "user";
+        const avatarText = isAssistant ? "AI" : "U";
+        div.className = "message";
+        div.innerHTML = `
+          <div class="message-row">
+            <div class="avatar ${avatarClass}">${avatarText}</div>
+            <div style="flex:1;min-width:0;">
+              <div class="message-header"><strong>${label}</strong></div>
+              <div class="viz-toggle">
+                <button class="active" data-view="viz">Dashboard</button>
+                <button data-view="text">Raw Data</button>
+              </div>
+              <div class="viz-container" id="${vizId}-viz">
+                <iframe sandbox="allow-scripts" srcdoc=""></iframe>
+              </div>
+              <div class="content" id="${vizId}-text" style="display:none;"></div>
+              ${source ? `<small>${source}</small>` : ""}
+            </div>
+          </div>
+        `;
+        chatEl.prepend(div);
+        
+        // Set iframe content
+        const iframe = div.querySelector("iframe");
+        iframe.srcdoc = html;
+        
+        // Auto-resize iframe after content loads
+        iframe.onload = () => {
+          try {
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            const height = iframeDoc.body.scrollHeight + 20;
+            iframe.style.height = Math.min(Math.max(height, 300), 800) + "px";
+          } catch (e) {
+            // Sandbox may prevent access, use default height
+            iframe.style.height = "500px";
+          }
+        };
+        
+        // Set text content
+        const textDiv = div.querySelector(`#${vizId}-text`);
+        textDiv.innerHTML = text.replace(/\\n/g, "<br>");
+        
+        // Toggle buttons
+        const toggleBtns = div.querySelectorAll(".viz-toggle button");
+        const vizContainer = div.querySelector(`#${vizId}-viz`);
+        toggleBtns.forEach(btn => {
+          btn.addEventListener("click", () => {
+            toggleBtns.forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            if (btn.dataset.view === "viz") {
+              vizContainer.style.display = "block";
+              textDiv.style.display = "none";
+            } else {
+              vizContainer.style.display = "none";
+              textDiv.style.display = "block";
+            }
+          });
+        });
+        
+        return div;
+      };
+
       const getPayload = () => {
         clearErrors();
         const connectionId = document.getElementById("connectionId").value.trim();
@@ -1057,11 +1155,17 @@
             sourceInfo = `Source: ${data.source}`;
           }
           if (data.sql) {
-            sourceInfo += (sourceInfo ? "<br>" : "") + `<details><summary>View SQL</summary><pre style="background:#1e293b;padding:8px;border-radius:4px;overflow-x:auto;margin-top:4px;">${data.sql}</pre></details>`;
+            sourceInfo += (sourceInfo ? "<br>" : "") + `<details><summary>View SQL</summary><pre style="background:#1e293b;color:#e2e8f0;padding:8px;border-radius:4px;overflow-x:auto;margin-top:4px;">${data.sql}</pre></details>`;
           }
           
-          // Use typing effect for assistant responses
-          await addMessageWithTyping("Assistant", data.answer, sourceInfo);
+          // Check if we have HTML visualization
+          if (data.html) {
+            // Add message with visualization
+            await addMessageWithVisualization("Assistant", data.answer, sourceInfo, data.html);
+          } else {
+            // Use typing effect for assistant responses
+            await addMessageWithTyping("Assistant", data.answer, sourceInfo);
+          }
           statusEl.textContent = "";
           document.getElementById("message").value = "";
         } catch (err) {

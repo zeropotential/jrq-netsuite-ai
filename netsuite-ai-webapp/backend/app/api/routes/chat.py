@@ -38,6 +38,7 @@ class ChatResponse(BaseModel):
     answer: str
     source: str
     sql: str | None = None
+    html: str | None = None
 
 
 def _get_openai_client(api_key: str | None) -> OpenAI:
@@ -99,6 +100,83 @@ def _format_kb_context(kb_entries: list[KnowledgeBaseEntry] | None) -> str:
     for entry in kb_entries:
         lines.append(f"- {entry.title}: {entry.content}")
     return "\n".join(lines)
+
+
+def _generate_html_visualization(
+    client: OpenAI,
+    user_request: str,
+    columns: list[str],
+    rows: list[list],
+    sql: str,
+) -> str:
+    """Generate HTML visualization (charts, tables, graphs) from query results using LLM."""
+    # Limit data for context window
+    sample_rows = rows[:100]  # Max 100 rows for visualization
+    
+    # Format data as JSON for the LLM
+    import json
+    data_json = json.dumps({"columns": columns, "rows": sample_rows}, default=str)
+    
+    messages = [
+        {
+            "role": "system",
+            "content": '''You are a data visualization expert. Generate a complete, self-contained HTML snippet that visualizes the provided data.
+
+RULES:
+1. Use Chart.js (CDN: https://cdn.jsdelivr.net/npm/chart.js) for charts/graphs
+2. Create clean, professional visualizations with good colors
+3. Choose the BEST visualization type based on the data and user request:
+   - Bar charts for comparisons
+   - Line charts for trends over time
+   - Pie/Doughnut charts for proportions
+   - Tables for detailed data listings
+   - Combine multiple visualizations if appropriate
+4. Always include a styled HTML table showing the data
+5. Use modern CSS styling (flexbox, clean fonts, subtle shadows)
+6. Make it responsive and visually appealing
+7. Include a title based on the user's question
+8. Return ONLY the HTML code, no markdown, no code fences, no explanation
+9. The HTML must be self-contained (inline styles and scripts)
+10. Use a light color scheme that matches a professional dashboard
+
+Color palette to use:
+- Primary: #0f766e (teal)
+- Secondary: #22c1a2 (light teal)  
+- Accent colors: #3b82f6 (blue), #8b5cf6 (purple), #f59e0b (amber), #ef4444 (red), #22c55e (green)
+- Background: #f8fafc
+- Text: #0f172a
+- Muted: #64748b'''
+        },
+        {
+            "role": "user",
+            "content": f"""User's question: {user_request}
+
+SQL executed: {sql}
+
+Data (JSON format):
+{data_json}
+
+Generate an HTML visualization dashboard for this data."""
+        }
+    ]
+    
+    response = client.chat.completions.create(
+        model=settings.openai_model,
+        messages=messages,
+        **_get_completion_kwargs(8192, temperature=0.3),
+    )
+    
+    html = (response.choices[0].message.content or "").strip()
+    
+    # Clean up any markdown code fences if present
+    if html.startswith("```html"):
+        html = html[7:]
+    if html.startswith("```"):
+        html = html[3:]
+    if html.endswith("```"):
+        html = html[:-3]
+    
+    return html.strip()
 
 
 def _answer_general_question(
@@ -292,12 +370,30 @@ def chat(
     rows = result.get("rows", [])
     if not rows:
         answer = "Query executed successfully. No rows returned."
-    else:
-        header = " | ".join(columns) if columns else "(no columns)"
-        lines = [header, "-" * max(len(header), 3)]
-        for row in rows:
-            lines.append(" | ".join(str(value) for value in row))
-        answer = "\n".join(lines)
+        return ChatResponse(answer=answer, source="netsuite_jdbc", sql=sql, html=None)
+    
+    # Generate text summary
+    header = " | ".join(columns) if columns else "(no columns)"
+    lines = [header, "-" * max(len(header), 3)]
+    for row in rows:
+        lines.append(" | ".join(str(value) for value in row))
+    answer = "\n".join(lines)
+    
+    # Generate HTML visualization
+    html_content = None
+    try:
+        logger.info("Generating HTML visualization...")
+        html_content = _generate_html_visualization(
+            client=client,
+            user_request=prompt,
+            columns=columns,
+            rows=rows,
+            sql=sql,
+        )
+        logger.info(f"HTML visualization generated: {len(html_content)} chars")
+    except Exception as exc:
+        logger.warning(f"Failed to generate HTML visualization: {exc}")
+        # Continue without visualization - not a fatal error
 
     logger.info(f"Chat response: {len(rows)} rows returned")
-    return ChatResponse(answer=answer, source="netsuite_jdbc", sql=sql)
+    return ChatResponse(answer=answer, source="netsuite_jdbc", sql=sql, html=html_content)
