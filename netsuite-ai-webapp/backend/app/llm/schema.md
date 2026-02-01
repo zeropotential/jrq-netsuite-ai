@@ -12,6 +12,18 @@ Use **only** these canonical table names in generated SQL:
 
 Do **not** use the raw NetSuite table names in generated SQL. Use the column names exactly as listed below, but always attach them to the canonical table names above.
 
+## SQL Syntax Rules (CRITICAL)
+
+- **DO NOT use ROWNUM** - NetSuite SuiteAnalytics Connect does NOT support Oracle's ROWNUM
+- **Use FETCH FIRST N ROWS ONLY** for limiting results:
+  ```sql
+  SELECT * FROM transaction FETCH FIRST 100 ROWS ONLY
+  ```
+- **Use standard SQL-92 syntax** - JOINs, WHERE, GROUP BY, ORDER BY
+- **Date format**: Use `TO_DATE('2024-01-01', 'YYYY-MM-DD')` for date literals
+- **Boolean fields**: Use `'T'` for true, `'F'` for false
+- **String literals**: Use single quotes `'value'`
+
 ## Browsers and Reference Links
 
 - Schema Browser: https://system.netsuite.com/help/helpcenter/en_US/srbrowser/Browser2024_2/odbc/record/transaction.html#schematab
