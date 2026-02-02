@@ -554,11 +554,13 @@ def get_data_explorer(
     """
     Get information about all PostgreSQL mirror tables including columns and sample data.
     """
+    import logging
     from sqlalchemy import inspect, text, func
     from app.db.models.netsuite_mirror import (
         NSAccount, NSEmployee, NSCustomer, NSTransaction, NSTransactionLine
     )
     
+    logger = logging.getLogger(__name__)
     tables_info = []
     
     table_models = [
@@ -573,6 +575,7 @@ def get_data_explorer(
         try:
             # Get row count
             row_count = db.query(func.count(model.id)).scalar() or 0
+            logger.info(f"Data Explorer: {table_name} has {row_count} rows")
             
             # Get column info from model
             mapper = inspect(model)
@@ -583,6 +586,7 @@ def get_data_explorer(
             
             # Get sample data
             sample_rows = db.query(model).limit(sample_limit).all()
+            logger.info(f"Data Explorer: {table_name} fetched {len(sample_rows)} sample rows")
             sample_data = []
             for row in sample_rows:
                 row_dict = {}
@@ -602,7 +606,8 @@ def get_data_explorer(
                 sample_data=sample_data,
             ))
         except Exception as e:
-            # Table might not exist yet
+            # Log the error and return empty for this table
+            logger.error(f"Data Explorer error for {table_name}: {type(e).__name__}: {e}")
             tables_info.append(TableInfo(
                 name=table_name,
                 row_count=0,

@@ -731,10 +731,12 @@
           }
           
           const data = await response.json();
+          console.log("Data Explorer response:", data);
           explorerStatus.textContent = "";
           
           // Render each table
           data.tables.forEach(table => {
+            console.log(`Table ${table.name}: ${table.row_count} rows, ${table.columns.length} columns, ${table.sample_data.length} sample rows`);
             const tableCard = document.createElement("div");
             tableCard.className = "kb-card";
             tableCard.style.padding = "20px";
