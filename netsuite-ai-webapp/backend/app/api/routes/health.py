@@ -1,9 +1,11 @@
 import uuid
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from openai import OpenAI, AuthenticationError, APIConnectionError
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -33,9 +35,23 @@ class OpenAiConnectionInfo(BaseModel):
     error: str | None = None
 
 
+class TableSyncInfo(BaseModel):
+    row_count: int
+    last_synced: str | None = None
+    sync_status: str | None = None
+
+
+class PostgresMirrorInfo(BaseModel):
+    status: str  # "connected" | "error" | "no_data"
+    tables: dict[str, TableSyncInfo] | None = None
+    total_rows: int = 0
+    error: str | None = None
+
+
 class ConnectionHealthResponse(BaseModel):
     jdbc: JdbcConnectionInfo
     openai: OpenAiConnectionInfo
+    postgres_mirror: PostgresMirrorInfo
 
 
 @router.get("/healthz")
@@ -55,8 +71,8 @@ def check_connections_health(
     x_openai_api_key: str | None = Header(None),
 ) -> ConnectionHealthResponse:
     """
-    Check health of both JDBC (NetSuite) and OpenAI connections.
-    Returns connection info (without credentials) and status.
+    Check health of JDBC (NetSuite), OpenAI, and PostgreSQL mirror connections.
+    Returns connection info and PostgreSQL table row counts.
     """
     # Check JDBC connection
     jdbc_info = _check_jdbc_health(db, payload.connection_id)
@@ -64,7 +80,14 @@ def check_connections_health(
     # Check OpenAI connection
     openai_info = _check_openai_health(x_openai_api_key)
     
-    return ConnectionHealthResponse(jdbc=jdbc_info, openai=openai_info)
+    # Check PostgreSQL mirror tables
+    postgres_info = _check_postgres_mirror_health(db, payload.connection_id)
+    
+    return ConnectionHealthResponse(
+        jdbc=jdbc_info, 
+        openai=openai_info,
+        postgres_mirror=postgres_info
+    )
 
 
 def _check_jdbc_health(db: Session, connection_id: str) -> JdbcConnectionInfo:
@@ -149,46 +172,68 @@ def _check_openai_health(api_key: str | None) -> OpenAiConnectionInfo:
         )
 
 
-class SchemaInfoResponse(BaseModel):
-    markdown_schema_loaded: bool
-    markdown_schema_tables: list[str]
-    markdown_schema_size: int
-    csv_schema_loaded: bool
-    csv_schema_tables: int
-
-
-@router.get("/api/schema/info", response_model=SchemaInfoResponse)
-def get_schema_info() -> SchemaInfoResponse:
-    """
-    Get info about loaded schema references (no JDBC required).
-    This shows what schema the LLM will use for SQL generation.
-    """
-    from app.llm.sql_generator import _load_markdown_schema, _load_allowed_schema
-    
-    # Check markdown schema
-    md_schema = _load_markdown_schema()
-    md_loaded = md_schema is not None
-    md_size = len(md_schema) if md_schema else 0
-    
-    # Extract table names from markdown (look for "# TableName" or "## TableName")
-    md_tables = []
-    if md_schema:
-        import re
-        # Match headers like "# Transactions" or "## Transaction_lines"
-        matches = re.findall(r'^#+ ([A-Z][A-Za-z_]+)\s*$', md_schema, re.MULTILINE)
-        md_tables = list(set(matches))
-    
-    # Check CSV schema
-    csv_schema = _load_allowed_schema()
-    csv_loaded = csv_schema is not None
-    csv_tables = 0
-    if csv_schema:
-        csv_tables = csv_schema.count("\n- ")  # Count table entries
-    
-    return SchemaInfoResponse(
-        markdown_schema_loaded=md_loaded,
-        markdown_schema_tables=sorted(md_tables),
-        markdown_schema_size=md_size,
-        csv_schema_loaded=csv_loaded,
-        csv_schema_tables=csv_tables
+def _check_postgres_mirror_health(db: Session, connection_id: str) -> PostgresMirrorInfo:
+    """Check PostgreSQL mirror tables status and row counts."""
+    from app.db.models.netsuite_mirror import (
+        NSAccount, NSEmployee, NSCustomer, NSTransaction, NSTransactionLine, NSSyncLog
     )
+    
+    try:
+        # Get row counts for each table
+        table_models = [
+            ("account", NSAccount),
+            ("employee", NSEmployee),
+            ("customer", NSCustomer),
+            ("transaction", NSTransaction),
+            ("transactionline", NSTransactionLine),
+        ]
+        
+        tables_info = {}
+        total_rows = 0
+        
+        for table_name, model in table_models:
+            try:
+                count = db.query(func.count(model.id)).scalar() or 0
+                total_rows += count
+                
+                # Get last sync info for this table
+                last_sync = (
+                    db.query(NSSyncLog)
+                    .filter(
+                        NSSyncLog.connection_id == connection_id,
+                        NSSyncLog.table_name == table_name
+                    )
+                    .order_by(NSSyncLog.started_at.desc())
+                    .first()
+                )
+                
+                tables_info[table_name] = TableSyncInfo(
+                    row_count=count,
+                    last_synced=last_sync.completed_at.isoformat() if last_sync and last_sync.completed_at else None,
+                    sync_status=last_sync.status if last_sync else "never_synced"
+                )
+            except Exception:
+                tables_info[table_name] = TableSyncInfo(
+                    row_count=0,
+                    last_synced=None,
+                    sync_status="table_missing"
+                )
+        
+        if total_rows == 0:
+            return PostgresMirrorInfo(
+                status="no_data",
+                tables=tables_info,
+                total_rows=0
+            )
+        
+        return PostgresMirrorInfo(
+            status="connected",
+            tables=tables_info,
+            total_rows=total_rows
+        )
+        
+    except Exception as e:
+        return PostgresMirrorInfo(
+            status="error",
+            error=f"Database error: {str(e)[:100]}"
+        )
