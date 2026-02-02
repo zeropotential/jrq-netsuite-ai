@@ -314,7 +314,8 @@ def sync_transaction_lines(
             update_set = {"synced_at": text("now()")}
             for col in record_cols:
                 if col == "class_":
-                    update_set["class_"] = stmt.excluded.class_
+                    # 'class' is the DB column name, 'class_' is the Python attr
+                    update_set["class_"] = stmt.excluded["class"]
                 else:
                     update_set[col] = getattr(stmt.excluded, col)
             
