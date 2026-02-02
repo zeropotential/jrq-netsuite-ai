@@ -1,7 +1,7 @@
 """Add learning and memory tables
 
-Revision ID: 20260202_0001
-Revises: 20260131_0001
+Revision ID: 20260202_0003
+Revises: 20260202_0002
 Create Date: 2026-02-02
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '20260202_0001'
-down_revision = '20260131_0001'
+revision = '20260202_0003'
+down_revision = '20260202_0002'
 branch_labels = None
 depends_on = None
 
