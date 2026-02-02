@@ -736,23 +736,34 @@
           
           // Render each table
           data.tables.forEach(table => {
-            console.log(`Table ${table.name}: ${table.row_count} rows, ${table.columns.length} columns, ${table.sample_data.length} sample rows`);
+            console.log(`Table ${table.name}: ${table.row_count} rows, ${table.columns.length} columns, ${table.sample_data.length} sample rows`, table.error ? `Error: ${table.error}` : '');
             const tableCard = document.createElement("div");
             tableCard.className = "kb-card";
             tableCard.style.padding = "20px";
             
-            // Table header
+            // Table header with error indicator
+            const hasError = table.error || table.columns.length === 0;
             const header = document.createElement("div");
             header.style.cssText = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;";
             header.innerHTML = `
               <div>
                 <strong style="font-size: 16px; color: var(--text);">${table.name}</strong>
-                <span style="margin-left: 12px; padding: 4px 10px; background: ${table.row_count > 0 ? '#dcfce7' : '#fef3c7'}; color: ${table.row_count > 0 ? '#166534' : '#92400e'}; border-radius: 999px; font-size: 12px; font-weight: 600;">
-                  ${table.row_count.toLocaleString()} rows
+                <span style="margin-left: 12px; padding: 4px 10px; background: ${hasError ? '#fef2f2' : (table.row_count > 0 ? '#dcfce7' : '#fef3c7')}; color: ${hasError ? '#b91c1c' : (table.row_count > 0 ? '#166534' : '#92400e')}; border-radius: 999px; font-size: 12px; font-weight: 600;">
+                  ${hasError ? 'Table Missing' : table.row_count.toLocaleString() + ' rows'}
                 </span>
               </div>
             `;
             tableCard.appendChild(header);
+            
+            // Show error message if there's an error
+            if (table.error) {
+              const errorDiv = document.createElement("div");
+              errorDiv.style.cssText = "padding: 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #b91c1c; font-size: 13px; margin-bottom: 16px;";
+              errorDiv.innerHTML = `<strong>Error:</strong> ${table.error}<br><br><em>Run migrations to create this table: <code>alembic upgrade head</code></em>`;
+              tableCard.appendChild(errorDiv);
+              explorerContent.appendChild(tableCard);
+              return;
+            }
             
             // Columns section
             const colsSection = document.createElement("div");

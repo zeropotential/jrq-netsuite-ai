@@ -540,6 +540,7 @@ class TableInfo(BaseModel):
     row_count: int
     columns: list[ColumnInfo]
     sample_data: list[dict]
+    error: str | None = None
 
 
 class DataExplorerResponse(BaseModel):
@@ -607,12 +608,14 @@ def get_data_explorer(
             ))
         except Exception as e:
             # Log the error and return empty for this table
-            logger.error(f"Data Explorer error for {table_name}: {type(e).__name__}: {e}")
+            error_msg = f"{type(e).__name__}: {e}"
+            logger.error(f"Data Explorer error for {table_name}: {error_msg}")
             tables_info.append(TableInfo(
                 name=table_name,
                 row_count=0,
                 columns=[],
                 sample_data=[],
+                error=error_msg,
             ))
     
     return DataExplorerResponse(tables=tables_info)
