@@ -1,5 +1,10 @@
 {$PUBLIC_HOST} {
     encode gzip
 
-    reverse_proxy api:8000
+    reverse_proxy api:8000 {
+        transport http {
+            read_timeout 10m
+            write_timeout 10m
+        }
+    }
 }

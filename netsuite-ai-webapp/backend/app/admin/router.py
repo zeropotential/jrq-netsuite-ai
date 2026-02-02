@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -352,7 +354,8 @@ def clear_all_schema_cache() -> dict:
 
 class SyncRequest(BaseModel):
     months_back: int = Field(default=3, ge=1, le=24, description="Number of months of data to sync")
-    tables: list[str] | None = Field(default=None, description="Specific tables to sync (account, transaction, transactionline). If None, syncs all.")
+    tables: list[str] | None = Field(default=None, description="Specific tables to sync (account, employee, customer, transaction, transactionline). If None, syncs all.")
+    background: bool = Field(default=False, description="Run sync in background (returns immediately)")
 
 
 class SyncResponse(BaseModel):
@@ -360,6 +363,67 @@ class SyncResponse(BaseModel):
     tables: dict | None = None
     total_rows: int | None = None
     error: str | None = None
+    message: str | None = None
+
+
+# Background sync tracking
+_background_syncs: dict[str, dict] = {}
+
+
+def _run_background_sync(connection_id: str, tables: list[str] | None, months_back: int):
+    """Run sync in background thread."""
+    import threading
+    from app.db.session import SessionLocal
+    from app.netsuite.sync import (
+        sync_all, sync_accounts, sync_transactions, sync_transaction_lines,
+        sync_employees, sync_customers
+    )
+    
+    def do_sync():
+        db = SessionLocal()
+        try:
+            _background_syncs[connection_id] = {"status": "running", "started_at": datetime.utcnow().isoformat()}
+            
+            if tables:
+                results = {}
+                for table in tables:
+                    if table == "account":
+                        results["account"] = sync_accounts(db, connection_id)
+                    elif table == "employee":
+                        results["employee"] = sync_employees(db, connection_id)
+                    elif table == "customer":
+                        results["customer"] = sync_customers(db, connection_id)
+                    elif table == "transaction":
+                        results["transaction"] = sync_transactions(db, connection_id, months_back)
+                    elif table == "transactionline":
+                        results["transactionline"] = sync_transaction_lines(db, connection_id, months_back)
+                
+                db.commit()
+                all_success = all(r.get("status") == "success" for r in results.values())
+                _background_syncs[connection_id] = {
+                    "status": "success" if all_success else "partial",
+                    "tables": results,
+                    "total_rows": sum(r.get("rows_synced", 0) for r in results.values()),
+                    "completed_at": datetime.utcnow().isoformat(),
+                }
+            else:
+                result = sync_all(db, connection_id, months_back)
+                db.commit()
+                result["completed_at"] = datetime.utcnow().isoformat()
+                _background_syncs[connection_id] = result
+                
+        except Exception as e:
+            db.rollback()
+            _background_syncs[connection_id] = {
+                "status": "error",
+                "error": str(e),
+                "completed_at": datetime.utcnow().isoformat(),
+            }
+        finally:
+            db.close()
+    
+    thread = threading.Thread(target=do_sync, daemon=True)
+    thread.start()
 
 
 @router.post("/jdbc-connections/{connection_id}/sync", response_model=SyncResponse)
@@ -374,6 +438,9 @@ def sync_netsuite_data(
     This pulls data from NetSuite via JDBC and stores it in local mirror tables
     for fast querying. Only syncs transactions created in the last N months.
     
+    Set background=true to run sync in background and return immediately.
+    Check status with GET /sync/status endpoint.
+    
     Tables synced:
     - account: All accounts
     - employee: All employees
@@ -387,6 +454,14 @@ def sync_netsuite_data(
     )
     
     payload = payload or SyncRequest()
+    
+    # Background sync mode
+    if payload.background:
+        _run_background_sync(connection_id, payload.tables, payload.months_back)
+        return SyncResponse(
+            status="started",
+            message="Sync started in background. Check GET /sync/status for progress."
+        )
     
     try:
         if payload.tables:
@@ -428,6 +503,7 @@ class SyncStatusResponse(BaseModel):
     connection_id: str
     sync_logs: dict
     row_counts: dict
+    background_sync: dict | None = None
 
 
 @router.get("/jdbc-connections/{connection_id}/sync/status", response_model=SyncStatusResponse)
@@ -437,8 +513,18 @@ def get_sync_status(
 ) -> SyncStatusResponse:
     """
     Get the sync status and row counts for the PostgreSQL mirror tables.
+    Also returns any background sync status if running.
     """
     from app.netsuite.sync import get_sync_status as _get_sync_status
     
     result = _get_sync_status(db, connection_id)
-    return SyncStatusResponse(**result)
+    
+    # Include background sync status if exists
+    bg_status = _background_syncs.get(connection_id)
+    
+    return SyncStatusResponse(
+        connection_id=result["connection_id"],
+        sync_logs=result["sync_logs"],
+        row_counts=result["row_counts"],
+        background_sync=bg_status,
+    )
