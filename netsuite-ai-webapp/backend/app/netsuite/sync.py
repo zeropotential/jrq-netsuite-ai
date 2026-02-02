@@ -285,10 +285,8 @@ def sync_transaction_lines(
                 for row in rows:
                     full_record = dict(zip(col_lower, row))
                     # Only include columns that exist in our PG table
+                    # Keep 'class' as the key - it's the actual DB column name
                     record = {k: v for k, v in full_record.items() if k in pg_columns}
-                    # Rename 'class' to 'class_' for SQLAlchemy (class is reserved)
-                    if "class" in record:
-                        record["class_"] = record.pop("class")
                     all_records.append(record)
         
         if not all_records:
@@ -311,13 +309,11 @@ def sync_transaction_lines(
             stmt = insert(NSTransactionLine).values(batch)
             
             # Build dynamic update set based on available columns
+            # Use actual DB column names (not Python attribute names)
             update_set = {"synced_at": text("now()")}
             for col in record_cols:
-                if col == "class_":
-                    # 'class' is the DB column name, 'class_' is the Python attr
-                    update_set["class_"] = stmt.excluded["class"]
-                else:
-                    update_set[col] = getattr(stmt.excluded, col)
+                # Access excluded columns by DB column name
+                update_set[col] = stmt.excluded[col]
             
             stmt = stmt.on_conflict_do_update(
                 index_elements=["id"],
