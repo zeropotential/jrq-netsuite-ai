@@ -1423,7 +1423,7 @@
         const data = feedbackDataStore[feedbackId];
         if (!data) return;
         
-        const buttons = document.querySelector(\`.feedback-buttons[data-feedback-id="\${feedbackId}"]\`);
+        const buttons = document.querySelector(`.feedback-buttons[data-feedback-id="${feedbackId}"]`);
         if (!buttons) return;
         
         try {
@@ -1440,13 +1440,13 @@
           });
           
           if (response.ok) {
-            buttons.innerHTML = \`<span style="color:var(--accent);font-size:12px;">✓ Thanks for your feedback!</span>\`;
+            buttons.innerHTML = `<span style="color:var(--accent);font-size:12px;">✓ Thanks for your feedback!</span>`;
           } else {
-            buttons.innerHTML = \`<span style="color:#ef4444;font-size:12px;">Failed to submit feedback</span>\`;
+            buttons.innerHTML = `<span style="color:#ef4444;font-size:12px;">Failed to submit feedback</span>`;
           }
         } catch (err) {
           console.error("Feedback error:", err);
-          buttons.innerHTML = \`<span style="color:#ef4444;font-size:12px;">Error submitting feedback</span>\`;
+          buttons.innerHTML = `<span style="color:#ef4444;font-size:12px;">Error submitting feedback</span>`;
         }
       };
 
