@@ -33,7 +33,7 @@ class ChatRequest(BaseModel):
     scope: str | None = None
     history: list[ChatMessage] = Field(default_factory=list, max_length=20)
     kb_entries: list[KnowledgeBaseEntry] = Field(default_factory=list, max_length=20)
-    query_mode: str = Field(default="netsuite", pattern="^(netsuite|postgres)$", description="Query mode: 'netsuite' for direct JDBC, 'postgres' for local mirror")
+    query_mode: str = Field(default="postgres", pattern="^(netsuite|postgres)$", description="Query mode: 'postgres' for local mirror (default, faster), 'netsuite' for direct JDBC")
 
 
 class ChatResponse(BaseModel):
