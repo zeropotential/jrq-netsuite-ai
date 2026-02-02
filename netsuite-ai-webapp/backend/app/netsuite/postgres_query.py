@@ -246,10 +246,12 @@ Primary key: id
 | closedate | TIMESTAMP | Close date |
 | createddate | TIMESTAMP | Created date |
 | lastmodifieddate | TIMESTAMP | Last modified date |
-| foreigntotal | FLOAT | Total in foreign currency |
+| foreigntotal | FLOAT | Total amount in transaction currency |
+| foreignamountpaid | FLOAT | Amount already paid |
+| foreignamountunpaid | FLOAT | Outstanding/remaining unpaid amount |
 | currency | BIGINT | Currency ID |
 | exchangerate | FLOAT | Exchange rate |
-| memo | TEXT | Memo/notes |
+| memo | TEXT | Transaction memo/notes for analysis |
 
 ### Table: ns_transactionline
 Primary key: id
@@ -346,6 +348,28 @@ WHERE T.type = 'CustInvc' AND T.posting = 'T'
 GROUP BY C.id, C.companyname
 ORDER BY total_sales DESC
 LIMIT 10
+
+-- Top customers with paid/unpaid analysis (using header amounts)
+SELECT C.id, C.companyname,
+  COUNT(T.id) as invoice_count,
+  COALESCE(SUM(T.foreigntotal), 0) as total_invoiced,
+  COALESCE(SUM(T.foreignamountpaid), 0) as total_paid,
+  COALESCE(SUM(T.foreignamountunpaid), 0) as total_unpaid,
+  ROUND(100.0 * COALESCE(SUM(T.foreignamountpaid), 0) / NULLIF(COALESCE(SUM(T.foreigntotal), 0), 0), 2) as percent_paid
+FROM ns_transaction T
+INNER JOIN ns_customer C ON T.entity = C.id
+WHERE T.type = 'CustInvc' AND T.posting = 'T'
+GROUP BY C.id, C.companyname
+ORDER BY total_invoiced DESC
+LIMIT 10
+
+-- Outstanding/unpaid invoices
+SELECT T.tranid, T.trandate, C.companyname,
+  T.foreigntotal, T.foreignamountpaid, T.foreignamountunpaid, T.memo
+FROM ns_transaction T
+INNER JOIN ns_customer C ON T.entity = C.id
+WHERE T.type = 'CustInvc' AND T.foreignamountunpaid > 0
+ORDER BY T.foreignamountunpaid DESC
 ```
 
 ### SQL Syntax (PostgreSQL)
