@@ -47,6 +47,11 @@
         border-radius: 18px;
         border: 1px solid var(--border);
         box-shadow: var(--shadow);
+        position: sticky;
+        top: 18px;
+        height: fit-content;
+        max-height: calc(100vh - 36px);
+        overflow-y: auto;
       }
       .brand {
         display: flex;
@@ -339,6 +344,53 @@
         margin-top: 8px;
         color: var(--muted);
       }
+      /* Collapsible message styles */
+      .message-collapse-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 2px 6px;
+        font-size: 12px;
+        color: var(--muted);
+        border-radius: 4px;
+        margin-left: 8px;
+        transition: all 0.2s;
+      }
+      .message-collapse-btn:hover {
+        background: var(--soft);
+        color: var(--text);
+      }
+      .message-collapse-btn .chevron {
+        display: inline-block;
+        transition: transform 0.2s;
+      }
+      .message-collapse-btn.collapsed .chevron {
+        transform: rotate(-90deg);
+      }
+      .message-body {
+        transition: max-height 0.3s ease, opacity 0.2s ease;
+        overflow: hidden;
+      }
+      .message-body.collapsed {
+        max-height: 0 !important;
+        opacity: 0;
+        margin: 0;
+        padding: 0;
+      }
+      .message-preview {
+        display: none;
+        font-size: 13px;
+        color: var(--muted);
+        font-style: italic;
+        margin-top: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 500px;
+      }
+      .message-body.collapsed + .message-preview {
+        display: block;
+      }
       .footer {
         margin-top: 12px;
         font-size: 12px;
@@ -350,6 +402,10 @@
         }
         .sidebar {
           display: none;
+        }
+        .sidebar {
+          position: relative;
+          top: 0;
         }
         .inputs {
           grid-template-columns: 1fr;
@@ -1353,14 +1409,19 @@
         const isAssistant = label.toLowerCase() === "assistant";
         const avatarClass = isAssistant ? "assistant" : "user";
         const avatarText = isAssistant ? "AI" : "U";
+        const collapseBtn = isAssistant ? `<button class="message-collapse-btn" onclick="toggleMessageCollapse(this)"><span class="chevron">▼</span> Collapse</button>` : "";
+        const preview = text.substring(0, 100).replace(/\n/g, ' ') + (text.length > 100 ? '...' : '');
         div.className = "message";
         div.innerHTML = `
           <div class="message-row">
             <div class="avatar ${avatarClass}">${avatarText}</div>
-            <div>
-              <div class="message-header"><strong>${label}</strong></div>
-              <div class="content"></div>
-              ${source ? `<small>${source}</small>` : ""}
+            <div style="flex:1;min-width:0;">
+              <div class="message-header"><strong>${label}</strong>${collapseBtn}</div>
+              <div class="message-body">
+                <div class="content"></div>
+                ${source ? `<small>${source}</small>` : ""}
+              </div>
+              ${isAssistant ? `<div class="message-preview">${preview}</div>` : ""}
             </div>
           </div>
         `;
@@ -1512,6 +1573,71 @@
         '#ef4444', '#22c55e', '#06b6d4', '#ec4899', '#84cc16'
       ];
 
+      // Check if a column name looks like an ID field (not summable)
+      const isIdColumn = (colName) => {
+        const name = colName.toLowerCase();
+        // Exact matches for common ID columns
+        if (name === 'id') return true;
+        // Patterns that indicate an ID field
+        const idPatterns = [
+          /_id$/,           // ends with _id
+          /^id_/,           // starts with id_
+          /_key$/,          // ends with _key
+          /^key_/,          // starts with key_
+          /entity$/,        // ends with entity (like entity, ns_entity)
+          /^entity/,        // starts with entity
+          /internalid/i,    // contains internalid
+          /externalid/i,    // contains externalid
+          /parent$/,        // parent reference
+          /subsidiary$/,    // subsidiary ID
+          /department$/,    // department ID
+          /location$/,      // location ID
+          /currency$/,      // currency ID
+          /category$/,      // category ID
+          /salesrep$/,      // salesrep ID
+          /supervisor$/,    // supervisor ID
+          /account$/,       // account reference (not account number)
+          /item$/,          // item ID
+          /linesequence/i,  // line sequence numbers
+          /^line$/,         // line number
+        ];
+        return idPatterns.some(pattern => pattern.test(name));
+      };
+
+      // Check if a column looks like a count/quantity that should show count, not sum
+      const isCountColumn = (colName) => {
+        const name = colName.toLowerCase();
+        return name.includes('count') || name.includes('_count') || name === 'rows';
+      };
+
+      // Check if a column is summable (amounts, revenue, quantities - but not IDs)
+      const isSummableColumn = (colName) => {
+        const name = colName.toLowerCase();
+        // Skip if it's an ID column
+        if (isIdColumn(colName)) return false;
+        // Positive indicators for summable columns
+        const summablePatterns = [
+          /amount/i,
+          /total/i,
+          /sum/i,
+          /revenue/i,
+          /sales/i,
+          /cost/i,
+          /price/i,
+          /balance/i,
+          /credit/i,
+          /debit/i,
+          /quantity/i,
+          /qty/i,
+          /foreignamount/i,
+          /netamount/i,
+          /foreigntotal/i,
+          /exchangerate/i,
+          /creditlimit/i,
+        ];
+        return summablePatterns.some(pattern => pattern.test(name));
+      };
+
       // Detect column types from data
       const detectColumnTypes = (columns, rows) => {
         const types = {};
@@ -1559,40 +1685,61 @@
         const stringCols = columns.filter(c => types[c] === 'string');
         const dateCols = columns.filter(c => types[c] === 'date');
         
+        // Filter numeric columns: only sum columns that are actually summable (not IDs)
+        const summableCols = numericCols.filter(c => isSummableColumn(c));
+        // Non-summable numeric columns (IDs, counts) - show count instead
+        const idCols = numericCols.filter(c => isIdColumn(c));
+        
         let html = `<div class="dashboard" id="${containerId}">`;
         
-        // Stats cards for numeric columns
-        if (numericCols.length > 0) {
-          html += '<div class="dashboard-stats">';
-          numericCols.slice(0, 4).forEach(col => {
-            const colIdx = columns.indexOf(col);
-            const values = rows.map(r => parseFloat(r[colIdx])).filter(v => !isNaN(v));
-            const sum = values.reduce((a, b) => a + b, 0);
-            const avg = values.length > 0 ? sum / values.length : 0;
-            
-            html += `
-              <div class="stat-card">
-                <div class="stat-label">${col} (Total)</div>
-                <div class="stat-value">${formatNumber(sum)}</div>
-              </div>
-            `;
-          });
+        // Stats cards - only for summable numeric columns
+        html += '<div class="dashboard-stats">';
+        
+        // Add Total Rows card first
+        html += `
+          <div class="stat-card">
+            <div class="stat-label">Total Rows</div>
+            <div class="stat-value">${rows.length.toLocaleString()}</div>
+          </div>
+        `;
+        
+        // Add summable columns (amounts, totals, etc.)
+        summableCols.slice(0, 4).forEach(col => {
+          const colIdx = columns.indexOf(col);
+          const values = rows.map(r => parseFloat(r[colIdx])).filter(v => !isNaN(v));
+          const sum = values.reduce((a, b) => a + b, 0);
+          
           html += `
             <div class="stat-card">
-              <div class="stat-label">Total Rows</div>
-              <div class="stat-value">${rows.length}</div>
+              <div class="stat-label">${col} (Total)</div>
+              <div class="stat-value">${formatNumber(sum)}</div>
             </div>
           `;
-          html += '</div>';
+        });
+        
+        // If we have ID columns, show unique count for the first one
+        if (idCols.length > 0 && summableCols.length < 3) {
+          const idCol = idCols[0];
+          const colIdx = columns.indexOf(idCol);
+          const uniqueValues = new Set(rows.map(r => r[colIdx]).filter(v => v != null));
+          html += `
+            <div class="stat-card">
+              <div class="stat-label">${idCol} (Unique)</div>
+              <div class="stat-value">${uniqueValues.size.toLocaleString()}</div>
+            </div>
+          `;
         }
         
-        // Chart section
+        html += '</div>';
+        
+        // Chart section - use summable columns for value, or first numeric if none summable
         const chartId = containerId + '-chart';
-        if (numericCols.length > 0 && (stringCols.length > 0 || dateCols.length > 0)) {
+        const chartValueCol = summableCols.length > 0 ? summableCols[0] : (numericCols.length > 0 ? numericCols[0] : null);
+        
+        if (chartValueCol && (stringCols.length > 0 || dateCols.length > 0)) {
           const labelCol = stringCols[0] || dateCols[0];
           const labelIdx = columns.indexOf(labelCol);
-          const valueCol = numericCols[0];
-          const valueIdx = columns.indexOf(valueCol);
+          const valueIdx = columns.indexOf(chartValueCol);
           
           // Aggregate data for chart (top 10)
           const aggregated = {};
@@ -1623,7 +1770,7 @@
             pieId: chartId + '-pie',
             labels: sortedLabels,
             data: chartData,
-            label: valueCol,
+            label: chartValueCol,
             labelCol: labelCol,
           });
         }
@@ -1739,6 +1886,16 @@
       // Store feedback data for each response
       const feedbackDataStore = {};
 
+      // Toggle message collapse/expand
+      window.toggleMessageCollapse = (btn) => {
+        const messageBody = btn.closest('.message').querySelector('.message-body');
+        const isCollapsed = messageBody.classList.toggle('collapsed');
+        btn.classList.toggle('collapsed', isCollapsed);
+        btn.innerHTML = isCollapsed 
+          ? '<span class="chevron">▼</span> Expand'
+          : '<span class="chevron">▼</span> Collapse';
+      };
+
       // Submit feedback to the API
       window.submitFeedback = async (feedbackId, feedbackType) => {
         const data = feedbackDataStore[feedbackId];
@@ -1782,15 +1939,20 @@
         const isAssistant = label.toLowerCase() === "assistant";
         const avatarClass = isAssistant ? "assistant" : "user";
         const avatarText = isAssistant ? "AI" : "U";
+        const collapseBtn = isAssistant ? `<button class="message-collapse-btn" onclick="toggleMessageCollapse(this)"><span class="chevron">▼</span> Collapse</button>` : "";
+        const preview = text.substring(0, 100).replace(/\n/g, ' ') + (text.length > 100 ? '...' : '');
         div.className = "message";
         div.innerHTML = `
           <div class="message-row">
             <div class="avatar ${avatarClass}">${avatarText}</div>
-            <div>
-              <div class="message-header"><strong>${label}</strong></div>
-              <div class="content"></div>
-              ${source ? `<small>${source}</small>` : ""}
-              ${isAssistant && feedbackId ? getFeedbackButtonsHtml(feedbackId) : ""}
+            <div style="flex:1;min-width:0;">
+              <div class="message-header"><strong>${label}</strong>${collapseBtn}</div>
+              <div class="message-body">
+                <div class="content"></div>
+                ${source ? `<small>${source}</small>` : ""}
+                ${isAssistant && feedbackId ? getFeedbackButtonsHtml(feedbackId) : ""}
+              </div>
+              ${isAssistant ? `<div class="message-preview">${preview}</div>` : ""}
             </div>
           </div>
         `;
@@ -1816,6 +1978,8 @@
         const isAssistant = label.toLowerCase() === "assistant";
         const avatarClass = isAssistant ? "assistant" : "user";
         const avatarText = isAssistant ? "AI" : "U";
+        const collapseBtn = isAssistant ? `<button class="message-collapse-btn" onclick="toggleMessageCollapse(this)"><span class="chevron">▼</span> Collapse</button>` : "";
+        const preview = `Dashboard: ${rows.length} rows, ${columns.length} columns`;
         
         const dashboardHtml = generateDashboard(columns, rows, dashId);
         
@@ -1824,15 +1988,18 @@
           <div class="message-row">
             <div class="avatar ${avatarClass}">${avatarText}</div>
             <div style="flex:1;min-width:0;">
-              <div class="message-header"><strong>${label}</strong></div>
-              <div class="viz-toggle">
-                <button class="active" data-view="viz">Dashboard</button>
-                <button data-view="text">Raw Data</button>
+              <div class="message-header"><strong>${label}</strong>${collapseBtn}</div>
+              <div class="message-body">
+                <div class="viz-toggle">
+                  <button class="active" data-view="viz">Dashboard</button>
+                  <button data-view="text">Raw Data</button>
+                </div>
+                <div id="${dashId}-viz">${dashboardHtml}</div>
+                <div class="content" id="${dashId}-text" style="display:none;"></div>
+                ${source ? `<small>${source}</small>` : ""}
+                ${isAssistant && feedbackId ? getFeedbackButtonsHtml(feedbackId) : ""}
               </div>
-              <div id="${dashId}-viz">${dashboardHtml}</div>
-              <div class="content" id="${dashId}-text" style="display:none;"></div>
-              ${source ? `<small>${source}</small>` : ""}
-              ${isAssistant && feedbackId ? getFeedbackButtonsHtml(feedbackId) : ""}
+              ${isAssistant ? `<div class="message-preview">${preview}</div>` : ""}
             </div>
           </div>
         `;
@@ -1877,22 +2044,27 @@
         const isAssistant = label.toLowerCase() === "assistant";
         const avatarClass = isAssistant ? "assistant" : "user";
         const avatarText = isAssistant ? "AI" : "U";
+        const collapseBtn = isAssistant ? `<button class="message-collapse-btn" onclick="toggleMessageCollapse(this)"><span class="chevron">▼</span> Collapse</button>` : "";
+        const preview = "Dashboard visualization";
         div.className = "message";
         div.innerHTML = `
           <div class="message-row">
             <div class="avatar ${avatarClass}">${avatarText}</div>
             <div style="flex:1;min-width:0;">
-              <div class="message-header"><strong>${label}</strong></div>
-              <div class="viz-toggle">
-                <button class="active" data-view="viz">Dashboard</button>
-                <button data-view="text">Raw Data</button>
+              <div class="message-header"><strong>${label}</strong>${collapseBtn}</div>
+              <div class="message-body">
+                <div class="viz-toggle">
+                  <button class="active" data-view="viz">Dashboard</button>
+                  <button data-view="text">Raw Data</button>
+                </div>
+                <div class="viz-container" id="${vizId}-viz">
+                  <iframe sandbox="allow-scripts" srcdoc=""></iframe>
+                </div>
+                <div class="content" id="${vizId}-text" style="display:none;"></div>
+                ${source ? `<small>${source}</small>` : ""}
+                ${isAssistant && feedbackId ? getFeedbackButtonsHtml(feedbackId) : ""}
               </div>
-              <div class="viz-container" id="${vizId}-viz">
-                <iframe sandbox="allow-scripts" srcdoc=""></iframe>
-              </div>
-              <div class="content" id="${vizId}-text" style="display:none;"></div>
-              ${source ? `<small>${source}</small>` : ""}
-              ${isAssistant && feedbackId ? getFeedbackButtonsHtml(feedbackId) : ""}
+              ${isAssistant ? `<div class="message-preview">${preview}</div>` : ""}
             </div>
           </div>
         `;
