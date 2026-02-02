@@ -44,8 +44,11 @@ class ChatResponse(BaseModel):
     answer: str
     source: str
     sql: str | None = None
-    html: str | None = None
+    html: str | None = None  # Deprecated - kept for backwards compatibility
     query_memory_id: int | None = None  # For feedback linking
+    # New fields for client-side dashboard rendering
+    columns: list[str] | None = None
+    rows: list[list] | None = None
 
 
 class FeedbackRequest(BaseModel):
@@ -523,31 +526,38 @@ def chat(
         answer = "Query executed successfully. No rows returned."
         return ChatResponse(answer=answer, source=query_source, sql=sql, html=None, query_memory_id=query_memory_id)
     
-    # Generate text summary
+    # Generate text summary (fallback for non-JS clients)
     header = " | ".join(columns) if columns else "(no columns)"
     lines = [header, "-" * max(len(header), 3)]
-    for row in rows:
+    for row in rows[:50]:  # Limit text summary to 50 rows
         lines.append(" | ".join(str(value) for value in row))
+    if len(rows) > 50:
+        lines.append(f"... and {len(rows) - 50} more rows")
     answer = "\n".join(lines)
     
-    # Generate HTML visualization
-    html_content = None
-    try:
-        logger.info("Generating HTML visualization...")
-        html_content = _generate_html_visualization(
-            client=client,
-            user_request=prompt,
-            columns=columns,
-            rows=rows,
-            sql=sql,
-        )
-        logger.info(f"HTML visualization generated: {len(html_content)} chars")
-    except Exception as exc:
-        logger.warning(f"Failed to generate HTML visualization: {exc}")
-        # Continue without visualization - not a fatal error
+    # Convert rows to JSON-serializable format (handle dates, decimals, etc.)
+    serializable_rows = []
+    for row in rows[:200]:  # Limit to 200 rows for dashboard
+        serializable_row = []
+        for value in row:
+            if value is None:
+                serializable_row.append(None)
+            elif hasattr(value, 'isoformat'):  # datetime/date
+                serializable_row.append(value.isoformat())
+            else:
+                serializable_row.append(value)
+        serializable_rows.append(serializable_row)
 
     logger.info(f"Chat response: {len(rows)} rows returned ({query_source})")
-    return ChatResponse(answer=answer, source=query_source, sql=sql, html=html_content, query_memory_id=query_memory_id)
+    return ChatResponse(
+        answer=answer,
+        source=query_source,
+        sql=sql,
+        html=None,  # No longer using LLM-generated HTML
+        query_memory_id=query_memory_id,
+        columns=columns,
+        rows=serializable_rows,
+    )
 
 
 @router.post("/feedback", response_model=FeedbackResponse)

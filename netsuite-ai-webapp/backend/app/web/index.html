@@ -426,7 +426,110 @@
         color: white;
         border-color: var(--accent);
       }
+      /* Dashboard styles */
+      .dashboard {
+        background: #f8fafc;
+        border-radius: 12px;
+        padding: 16px;
+        margin-top: 12px;
+      }
+      .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .dashboard-header h3 {
+        margin: 0;
+        font-size: 16px;
+        color: var(--text);
+      }
+      .dashboard-stats {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      .stat-card {
+        background: white;
+        border-radius: 10px;
+        padding: 14px 18px;
+        border: 1px solid var(--border);
+        min-width: 120px;
+        flex: 1;
+        max-width: 200px;
+      }
+      .stat-card .stat-label {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .stat-card .stat-value {
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--accent);
+        margin-top: 4px;
+      }
+      .dashboard-chart {
+        background: white;
+        border-radius: 10px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        margin-bottom: 16px;
+      }
+      .dashboard-chart canvas {
+        max-height: 300px;
+      }
+      .dashboard-table-container {
+        background: white;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+      }
+      .dashboard-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .dashboard-table th {
+        background: #f1f5f9;
+        padding: 10px 12px;
+        text-align: left;
+        font-weight: 600;
+        color: var(--text);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+      }
+      .dashboard-table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #f1f5f9;
+        color: var(--text);
+      }
+      .dashboard-table tr:hover td {
+        background: #f8fafc;
+      }
+      .dashboard-table tr:last-child td {
+        border-bottom: none;
+      }
+      .table-scroll {
+        max-height: 400px;
+        overflow-y: auto;
+      }
+      .dashboard-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      @media (max-width: 768px) {
+        .dashboard-row {
+          grid-template-columns: 1fr;
+        }
+      }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
     <div id="loginScreen" class="login-screen">
@@ -1403,6 +1506,224 @@
         });
       };
 
+      // Dashboard color palette
+      const CHART_COLORS = [
+        '#0f766e', '#22c1a2', '#3b82f6', '#8b5cf6', '#f59e0b', 
+        '#ef4444', '#22c55e', '#06b6d4', '#ec4899', '#84cc16'
+      ];
+
+      // Detect column types from data
+      const detectColumnTypes = (columns, rows) => {
+        const types = {};
+        columns.forEach((col, idx) => {
+          const values = rows.map(r => r[idx]).filter(v => v != null);
+          if (values.length === 0) {
+            types[col] = 'string';
+            return;
+          }
+          
+          const numericCount = values.filter(v => !isNaN(parseFloat(v)) && isFinite(v)).length;
+          const dateCount = values.filter(v => {
+            if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}/)) return true;
+            return false;
+          }).length;
+          
+          if (numericCount > values.length * 0.8) {
+            types[col] = 'number';
+          } else if (dateCount > values.length * 0.8) {
+            types[col] = 'date';
+          } else {
+            types[col] = 'string';
+          }
+        });
+        return types;
+      };
+
+      // Format number for display
+      const formatNumber = (val) => {
+        if (val == null) return '-';
+        const num = parseFloat(val);
+        if (isNaN(num)) return val;
+        if (Math.abs(num) >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+        if (Math.abs(num) >= 1000) return (num / 1000).toFixed(1) + 'K';
+        if (Number.isInteger(num)) return num.toLocaleString();
+        return num.toFixed(2);
+      };
+
+      // Generate dashboard HTML from query results
+      const generateDashboard = (columns, rows, containerId) => {
+        if (!columns || !rows || rows.length === 0) return '';
+        
+        const types = detectColumnTypes(columns, rows);
+        const numericCols = columns.filter(c => types[c] === 'number');
+        const stringCols = columns.filter(c => types[c] === 'string');
+        const dateCols = columns.filter(c => types[c] === 'date');
+        
+        let html = `<div class="dashboard" id="${containerId}">`;
+        
+        // Stats cards for numeric columns
+        if (numericCols.length > 0) {
+          html += '<div class="dashboard-stats">';
+          numericCols.slice(0, 4).forEach(col => {
+            const colIdx = columns.indexOf(col);
+            const values = rows.map(r => parseFloat(r[colIdx])).filter(v => !isNaN(v));
+            const sum = values.reduce((a, b) => a + b, 0);
+            const avg = values.length > 0 ? sum / values.length : 0;
+            
+            html += `
+              <div class="stat-card">
+                <div class="stat-label">${col} (Total)</div>
+                <div class="stat-value">${formatNumber(sum)}</div>
+              </div>
+            `;
+          });
+          html += `
+            <div class="stat-card">
+              <div class="stat-label">Total Rows</div>
+              <div class="stat-value">${rows.length}</div>
+            </div>
+          `;
+          html += '</div>';
+        }
+        
+        // Chart section
+        const chartId = containerId + '-chart';
+        if (numericCols.length > 0 && (stringCols.length > 0 || dateCols.length > 0)) {
+          const labelCol = stringCols[0] || dateCols[0];
+          const labelIdx = columns.indexOf(labelCol);
+          const valueCol = numericCols[0];
+          const valueIdx = columns.indexOf(valueCol);
+          
+          // Aggregate data for chart (top 10)
+          const aggregated = {};
+          rows.forEach(row => {
+            const label = row[labelIdx] || 'Unknown';
+            const value = parseFloat(row[valueIdx]) || 0;
+            aggregated[label] = (aggregated[label] || 0) + value;
+          });
+          
+          const sortedLabels = Object.keys(aggregated).sort((a, b) => aggregated[b] - aggregated[a]).slice(0, 10);
+          const chartData = sortedLabels.map(l => aggregated[l]);
+          
+          html += `
+            <div class="dashboard-row">
+              <div class="dashboard-chart">
+                <canvas id="${chartId}-bar"></canvas>
+              </div>
+              <div class="dashboard-chart">
+                <canvas id="${chartId}-pie"></canvas>
+              </div>
+            </div>
+          `;
+          
+          // Store chart data for later rendering
+          window.pendingCharts = window.pendingCharts || [];
+          window.pendingCharts.push({
+            barId: chartId + '-bar',
+            pieId: chartId + '-pie',
+            labels: sortedLabels,
+            data: chartData,
+            label: valueCol,
+            labelCol: labelCol,
+          });
+        }
+        
+        // Data table
+        html += `
+          <div class="dashboard-table-container">
+            <div class="table-scroll">
+              <table class="dashboard-table">
+                <thead><tr>
+                  ${columns.map(c => `<th>${c}</th>`).join('')}
+                </tr></thead>
+                <tbody>
+        `;
+        
+        rows.slice(0, 100).forEach(row => {
+          html += '<tr>';
+          row.forEach((cell, idx) => {
+            const col = columns[idx];
+            let displayVal = cell;
+            if (types[col] === 'number' && cell != null) {
+              displayVal = formatNumber(cell);
+            } else if (cell == null) {
+              displayVal = '-';
+            }
+            html += `<td>${displayVal}</td>`;
+          });
+          html += '</tr>';
+        });
+        
+        if (rows.length > 100) {
+          html += `<tr><td colspan="${columns.length}" style="text-align:center;color:var(--muted);font-style:italic;">... and ${rows.length - 100} more rows</td></tr>`;
+        }
+        
+        html += '</tbody></table></div></div>';
+        html += '</div>';
+        
+        return html;
+      };
+
+      // Render pending charts (called after DOM update)
+      const renderPendingCharts = () => {
+        if (!window.pendingCharts || window.pendingCharts.length === 0) return;
+        
+        window.pendingCharts.forEach(chart => {
+          // Bar chart
+          const barCtx = document.getElementById(chart.barId);
+          if (barCtx) {
+            new Chart(barCtx, {
+              type: 'bar',
+              data: {
+                labels: chart.labels,
+                datasets: [{
+                  label: chart.label,
+                  data: chart.data,
+                  backgroundColor: CHART_COLORS.slice(0, chart.labels.length),
+                  borderRadius: 6,
+                }]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { display: false },
+                  title: { display: true, text: `${chart.label} by ${chart.labelCol}`, font: { size: 14 } }
+                },
+                scales: {
+                  y: { beginAtZero: true }
+                }
+              }
+            });
+          }
+          
+          // Pie chart
+          const pieCtx = document.getElementById(chart.pieId);
+          if (pieCtx) {
+            new Chart(pieCtx, {
+              type: 'doughnut',
+              data: {
+                labels: chart.labels,
+                datasets: [{
+                  data: chart.data,
+                  backgroundColor: CHART_COLORS.slice(0, chart.labels.length),
+                }]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { position: 'right', labels: { boxWidth: 12 } },
+                  title: { display: true, text: `${chart.label} Distribution`, font: { size: 14 } }
+                }
+              }
+            });
+          }
+        });
+        
+        window.pendingCharts = [];
+      };
+
       // Generate feedback buttons HTML
       const getFeedbackButtonsHtml = (feedbackId) => {
         if (!feedbackId) return "";
@@ -1483,7 +1804,68 @@
         return div;
       };
 
-      // Add message with HTML visualization (charts, tables, graphs)
+      // Add message with dashboard (client-side rendered from query results)
+      const addMessageWithDashboard = async (label, text, source, columns, rows, feedbackData = null) => {
+        const feedbackId = feedbackData ? "fb-" + Date.now() : null;
+        if (feedbackData && feedbackId) {
+          feedbackDataStore[feedbackId] = feedbackData;
+        }
+        
+        const dashId = "dash-" + Date.now();
+        const div = document.createElement("div");
+        const isAssistant = label.toLowerCase() === "assistant";
+        const avatarClass = isAssistant ? "assistant" : "user";
+        const avatarText = isAssistant ? "AI" : "U";
+        
+        const dashboardHtml = generateDashboard(columns, rows, dashId);
+        
+        div.className = "message";
+        div.innerHTML = `
+          <div class="message-row">
+            <div class="avatar ${avatarClass}">${avatarText}</div>
+            <div style="flex:1;min-width:0;">
+              <div class="message-header"><strong>${label}</strong></div>
+              <div class="viz-toggle">
+                <button class="active" data-view="viz">Dashboard</button>
+                <button data-view="text">Raw Data</button>
+              </div>
+              <div id="${dashId}-viz">${dashboardHtml}</div>
+              <div class="content" id="${dashId}-text" style="display:none;"></div>
+              ${source ? `<small>${source}</small>` : ""}
+              ${isAssistant && feedbackId ? getFeedbackButtonsHtml(feedbackId) : ""}
+            </div>
+          </div>
+        `;
+        chatEl.prepend(div);
+        
+        // Set raw text content
+        const textDiv = div.querySelector(`#${dashId}-text`);
+        textDiv.textContent = text;
+        
+        // Toggle buttons
+        const toggleBtns = div.querySelectorAll(".viz-toggle button");
+        const vizContainer = div.querySelector(`#${dashId}-viz`);
+        toggleBtns.forEach(btn => {
+          btn.addEventListener("click", () => {
+            toggleBtns.forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            if (btn.dataset.view === "viz") {
+              vizContainer.style.display = "block";
+              textDiv.style.display = "none";
+            } else {
+              vizContainer.style.display = "none";
+              textDiv.style.display = "block";
+            }
+          });
+        });
+        
+        // Render charts after DOM update
+        setTimeout(() => renderPendingCharts(), 100);
+        
+        return div;
+      };
+
+      // Add message with HTML visualization (charts, tables, graphs) - LEGACY for old responses
       const addMessageWithVisualization = async (label, text, source, html, feedbackData = null) => {
         const feedbackId = feedbackData ? "fb-" + Date.now() : null;
         if (feedbackData && feedbackId) {
@@ -1682,12 +2064,15 @@
             sql_generated: data.sql || null,
           };
           
-          // Check if we have HTML visualization
-          if (data.html) {
-            // Add message with visualization
+          // Check if we have query results (columns and rows) for dashboard
+          if (data.columns && data.rows && data.rows.length > 0) {
+            // Render client-side dashboard from query results
+            await addMessageWithDashboard("Assistant", data.answer, sourceInfo, data.columns, data.rows, feedbackData);
+          } else if (data.html) {
+            // Legacy: Add message with LLM-generated visualization
             await addMessageWithVisualization("Assistant", data.answer, sourceInfo, data.html, feedbackData);
           } else {
-            // Use typing effect for assistant responses
+            // Use typing effect for assistant responses (non-query results)
             await addMessageWithTyping("Assistant", data.answer, sourceInfo, feedbackData);
           }
           statusEl.textContent = "";
