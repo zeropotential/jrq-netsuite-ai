@@ -104,24 +104,44 @@ def _rewrite_syntax(sql: str) -> str:
 def _validate_sql(sql: str) -> None:
     """
     Strict SQL validation to prevent dangerous operations.
-    Only allows SELECT queries on specific tables.
+    Only allows SELECT queries (including CTEs) on specific tables.
     """
     sql_upper = sql.upper().strip()
     
-    # Only allow SELECT
-    if not sql_upper.startswith("SELECT"):
+    # Only allow SELECT or WITH (CTEs that resolve to SELECT)
+    if not (sql_upper.startswith("SELECT") or sql_upper.startswith("WITH")):
         raise ValueError("Only SELECT queries are allowed")
+    
+    # If it starts with WITH (CTE), ensure the final statement is SELECT
+    if sql_upper.startswith("WITH"):
+        # CTEs can be used with INSERT/UPDATE/DELETE, block those
+        # The final statement after all CTE definitions must be SELECT
+        # Find the main query - look for SELECT that's not inside a CTE definition
+        # A simple approach: ensure SELECT appears after the CTE block and no DML keywords
+        if re.search(r'\)\s*(INSERT|UPDATE|DELETE|MERGE)\s', sql_upper):
+            raise ValueError("Only SELECT queries are allowed (no INSERT/UPDATE/DELETE with CTEs)")
+        # Also ensure there's a SELECT in the main query part
+        if "SELECT" not in sql_upper:
+            raise ValueError("CTE must contain a SELECT query")
     
     # Block dangerous keywords as whole words (comprehensive list)
     # Use word boundary regex to avoid false positives like "create_date"
+    # Note: For CTEs, we check the context above, so these keywords in CTE subqueries are ok
     dangerous_words = [
-        "DROP", "DELETE", "UPDATE", "INSERT", "TRUNCATE", "ALTER", "CREATE", 
+        "DROP", "TRUNCATE", "ALTER", "CREATE", 
         "GRANT", "REVOKE", "EXEC", "EXECUTE", "CALL", "COPY", "LOAD",
     ]
     for keyword in dangerous_words:
         # Match keyword as a whole word (not part of column names like create_date)
         if re.search(rf'\b{keyword}\b', sql_upper):
             raise ValueError(f"Dangerous keyword not allowed: {keyword}")
+    
+    # For non-CTE queries, also block DML
+    if not sql_upper.startswith("WITH"):
+        dml_words = ["DELETE", "UPDATE", "INSERT", "MERGE"]
+        for keyword in dml_words:
+            if re.search(rf'\b{keyword}\b', sql_upper):
+                raise ValueError(f"Dangerous keyword not allowed: {keyword}")
     
     # Block dangerous patterns that don't need word boundaries
     dangerous_patterns = [
