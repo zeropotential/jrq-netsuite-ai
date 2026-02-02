@@ -431,6 +431,7 @@ CRITICAL RULES:
 3. Use standard PostgreSQL date functions
 4. Only query the 5 tables listed above - always use the ns_ prefix!
 5. If asked about data not in these tables, return a query that selects a message explaining what's available
+6. ROUND with 2 args: MUST cast to NUMERIC first! Use ROUND(value::NUMERIC, 2) not ROUND(value, 2)
 
 IMPORTANT JOIN SYNTAX:
 - ns_transactionline has a column called 'transaction' (NOT 'ns_transaction')
@@ -466,7 +467,7 @@ COMMON PATTERNS:
     COALESCE(SUM(T.foreigntotal), 0) as total_invoiced,
     COALESCE(SUM(T.foreignamountpaid), 0) as total_paid,
     COALESCE(SUM(T.foreignamountunpaid), 0) as total_unpaid,
-    ROUND(100.0 * COALESCE(SUM(T.foreignamountpaid), 0) / NULLIF(COALESCE(SUM(T.foreigntotal), 0), 0), 2) as percent_paid
+    ROUND((100.0 * COALESCE(SUM(T.foreignamountpaid), 0) / NULLIF(COALESCE(SUM(T.foreigntotal), 0), 0))::NUMERIC, 2) as percent_paid
   FROM ns_transaction T
   JOIN ns_customer C ON T.entity = C.id
   WHERE T.type = 'CustInvc' AND T.posting = 'T'

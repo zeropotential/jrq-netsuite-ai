@@ -355,7 +355,7 @@ SELECT C.id, C.companyname,
   COALESCE(SUM(T.foreigntotal), 0) as total_invoiced,
   COALESCE(SUM(T.foreignamountpaid), 0) as total_paid,
   COALESCE(SUM(T.foreignamountunpaid), 0) as total_unpaid,
-  ROUND(100.0 * COALESCE(SUM(T.foreignamountpaid), 0) / NULLIF(COALESCE(SUM(T.foreigntotal), 0), 0), 2) as percent_paid
+  ROUND((100.0 * COALESCE(SUM(T.foreignamountpaid), 0) / NULLIF(COALESCE(SUM(T.foreigntotal), 0), 0))::NUMERIC, 2) as percent_paid
 FROM ns_transaction T
 INNER JOIN ns_customer C ON T.entity = C.id
 WHERE T.type = 'CustInvc' AND T.posting = 'T'
@@ -377,6 +377,8 @@ ORDER BY T.foreignamountunpaid DESC
 - Dates: Use standard PostgreSQL date syntax or TO_DATE()
 - Boolean: 'T' or 'F' strings
 - Aggregations: SUM(), COUNT(), AVG() work on numeric columns
+- ROUND with 2 args: MUST cast to NUMERIC first! Use ROUND(value::NUMERIC, 2) not ROUND(value, 2)
+  Example: ROUND((100.0 * paid / total)::NUMERIC, 2) as percent
 
 ### Available Tables Summary
 ONLY these tables exist: ns_account, ns_employee, ns_customer, ns_transaction, ns_transactionline
