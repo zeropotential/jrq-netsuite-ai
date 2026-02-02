@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.llm.sql_generator import LlmError, generate_oracle_sql, _get_completion_kwargs
+from app.llm.sql_generator import LlmError, generate_oracle_sql, generate_postgres_sql, _get_completion_kwargs
 from app.netsuite.jdbc import JdbcError, run_query
 
 logger = logging.getLogger(__name__)
@@ -360,15 +360,13 @@ def chat(
             logger.info(f"Generating SQL for: {prompt[:50]}... (mode: {payload.query_mode})")
             
             if use_postgres:
-                # Use PostgreSQL schema for SQL generation
+                # Use PostgreSQL-specific SQL generator
                 from app.netsuite.postgres_query import get_postgres_schema
-                result = generate_oracle_sql(
+                result = generate_postgres_sql(
                     prompt=prompt,
-                    schema_hint=get_postgres_schema(),  # Use PostgreSQL schema
+                    schema=get_postgres_schema(),
                     api_key=openai_api_key,
                     kb_context=_format_kb_context(payload.kb_entries),
-                    db=db,
-                    connection_id=payload.connection_id,
                 )
             else:
                 result = generate_oracle_sql(

@@ -371,3 +371,105 @@ def generate_oracle_sql(
         raise LlmError("LLM returned empty response - the model may not have generated SQL for this query")
 
     return SqlGenerationResult(sql=content, model=settings.openai_model)
+
+
+def generate_postgres_sql(
+    *,
+    prompt: str,
+    schema: str,
+    max_tokens: int = 2048,
+    api_key: str | None = None,
+    kb_context: str | None = None,
+) -> SqlGenerationResult:
+    """
+    Generate PostgreSQL SQL for local mirror tables from a natural language prompt.
+    
+    Args:
+        prompt: Natural language description of the query
+        schema: PostgreSQL schema documentation
+        max_tokens: Maximum tokens for LLM response
+        api_key: Optional OpenAI API key override
+        kb_context: Optional knowledge base context
+    
+    Returns:
+        SqlGenerationResult with generated SQL and model used
+    """
+    if settings.llm_provider.lower() != "openai":
+        raise LlmError("Unsupported LLM provider")
+
+    client = _require_openai_client(api_key)
+
+    system_content = """You are an expert PostgreSQL SQL query generator for a NetSuite data mirror.
+
+AVAILABLE TABLES (you can ONLY query these 5 tables):
+- transaction (or ns_transaction): Transaction headers
+- transactionline (or ns_transactionline): Transaction line items  
+- account (or ns_account): Chart of accounts
+- employee (or ns_employee): Employee records
+- customer (or ns_customer): Customer records
+
+CRITICAL RULES:
+1. Generate ONLY valid PostgreSQL syntax
+2. Use LIMIT (not TOP) to limit results
+3. Use standard PostgreSQL date functions
+4. Only query the 5 tables listed above
+5. If asked about data not in these tables, return a query that selects a message explaining what's available
+
+COMMON PATTERNS:
+- Customer invoices: JOIN transaction T with customer C on T.entity = C.id WHERE T.type = 'CustInvc'
+- Transaction lines: JOIN transaction T with transactionline TL on T.id = TL.transaction
+- Posting transactions: WHERE T.posting = 'T'
+
+DATE FILTERING:
+- Use: trandate >= '2025-01-01' AND trandate < '2026-01-01'
+- Or: trandate BETWEEN '2025-01-01' AND '2025-12-31'
+- The column for invoice/transaction date is 'trandate' (not create_date)
+- The column for created date is 'createddate'
+
+TRANSACTION TYPES:
+- CustInvc = Customer Invoice
+- SalesOrd = Sales Order
+- CustPymt = Customer Payment
+- VendBill = Vendor Bill
+
+OUTPUT:
+- Return ONLY the SQL query
+- No explanation, no markdown code fences
+- No semicolon at the end"""
+
+    user_content = f"""{schema}
+
+{kb_context if kb_context else ""}
+
+User request: {prompt}
+
+Generate a PostgreSQL query. Return ONLY the SQL, no explanation."""
+
+    response = client.chat.completions.create(
+        model=settings.openai_model,
+        messages=[
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content},
+        ],
+        **_get_completion_kwargs(max_tokens),
+    )
+
+    logger.info(f"PostgreSQL SQL generation response: finish_reason={response.choices[0].finish_reason}")
+    
+    content = (response.choices[0].message.content or "").strip()
+    
+    # Clean up markdown code fences if present
+    if content.startswith("```sql"):
+        content = content[6:]
+    if content.startswith("```"):
+        content = content[3:]
+    if content.endswith("```"):
+        content = content[:-3]
+    content = content.strip()
+    
+    if not content:
+        logger.error(f"LLM returned empty response for PostgreSQL query. Model: {settings.openai_model}, "
+                    f"finish_reason: {response.choices[0].finish_reason}")
+        raise LlmError("LLM returned empty response - the model may not have generated SQL for this query")
+
+    return SqlGenerationResult(sql=content, model=settings.openai_model)
