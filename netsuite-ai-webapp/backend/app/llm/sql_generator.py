@@ -409,6 +409,22 @@ AVAILABLE TABLES (you can ONLY query these 5 tables):
 - ns_employee: Employee records
 - ns_customer: Customer records
 
+KEY COLUMNS IN ns_transaction:
+- id: Internal ID
+- tranid: Document number (e.g., INV001, SO002)
+- type: Transaction type (CustInvc, SalesOrd, VendBill, CustPymt, etc.)
+- trandate: Transaction date
+- status: Transaction status
+- posting: 'T' for posted, 'F' for not posted
+- entity: Customer/vendor ID (foreign key to ns_customer.id)
+- foreigntotal: Total amount in transaction currency
+- foreignamountpaid: Amount already paid
+- foreignamountunpaid: Outstanding/remaining amount
+- memo: Transaction memo/notes for analysis
+- currency: Currency ID
+- exchangerate: Exchange rate
+- duedate, closedate, createddate, lastmodifieddate: Date fields
+
 CRITICAL RULES:
 1. Generate ONLY valid PostgreSQL syntax
 2. Use LIMIT (not TOP) to limit results
@@ -444,17 +460,55 @@ COMMON PATTERNS:
   GROUP BY C.id, C.companyname
   ORDER BY total_sales DESC
 
+- Outstanding invoices (unpaid):
+  SELECT tranid, trandate, foreigntotal, foreignamountpaid, foreignamountunpaid, memo
+  FROM ns_transaction
+  WHERE type = 'CustInvc' AND foreignamountunpaid > 0
+
+- Find transactions by memo keyword:
+  SELECT * FROM ns_transaction
+  WHERE memo ILIKE '%keyword%'
+
 DATE FILTERING:
 - Use: trandate >= '2025-01-01' AND trandate < '2026-01-01'
 - Or: trandate BETWEEN '2025-01-01' AND '2025-12-31'
 - The column for invoice/transaction date is 'trandate' (not create_date)
 - The column for created date is 'createddate'
 
-TRANSACTION TYPES:
+TRANSACTION TYPES (use these exact values for type column):
+Sales & Receivables:
 - CustInvc = Customer Invoice
 - SalesOrd = Sales Order
+- CashSale = Cash Sale
 - CustPymt = Customer Payment
+- CustDep = Customer Deposit
+- CustCred = Credit Memo
+- CustChrg = Statement Charge
+- Estimate = Estimate/Quote
+- RtnAuth = Return Authorization
+
+Purchasing & Payables:
+- PurchOrd = Purchase Order
 - VendBill = Vendor Bill
+- VendPymt = Vendor Bill Payment
+- VendCred = Vendor Credit
+- VendAuth = Vendor Return Authorization
+- ExpRept = Expense Report
+- Check = Check
+
+Inventory & Fulfillment:
+- ItemShip = Item Fulfillment
+- ItemRcpt = Item Receipt
+- TrnfrOrd = Transfer Order
+- InvtAdjst = Inventory Adjustment
+- InvtTrns = Inventory Transfer
+- WorkOrd = Work Order
+- AssemBld = Assembly Build
+- BinTrnfr = Bin Transfer
+
+Other:
+- Journal = Journal Entry
+- Opprtnty = Opportunity
 
 OUTPUT:
 - Return ONLY the SQL query

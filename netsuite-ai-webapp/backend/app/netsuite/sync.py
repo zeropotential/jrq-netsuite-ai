@@ -157,7 +157,8 @@ def sync_transactions(
             SELECT 
                 id, tranid, type, trandate, status, posting, entity,
                 duedate, closedate, createddate, lastmodifieddate,
-                foreigntotal, currency, exchangerate, memo
+                foreigntotal, foreignamountpaid, foreignamountunpaid,
+                currency, exchangerate, memo
             FROM transaction
             WHERE createddate >= TO_DATE('{date_str}', 'YYYY-MM-DD')
         """
@@ -195,6 +196,8 @@ def sync_transactions(
                 "createddate": stmt.excluded.createddate,
                 "lastmodifieddate": stmt.excluded.lastmodifieddate,
                 "foreigntotal": stmt.excluded.foreigntotal,
+                "foreignamountpaid": stmt.excluded.foreignamountpaid,
+                "foreignamountunpaid": stmt.excluded.foreignamountunpaid,
                 "currency": stmt.excluded.currency,
                 "exchangerate": stmt.excluded.exchangerate,
                 "memo": stmt.excluded.memo,

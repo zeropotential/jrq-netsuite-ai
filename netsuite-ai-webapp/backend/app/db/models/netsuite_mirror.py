@@ -85,15 +85,17 @@ class NSTransaction(Base):
     createddate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     lastmodifieddate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     
-    # Amounts (header level if available)
-    foreigntotal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Amounts (header level)
+    foreigntotal: Mapped[float | None] = mapped_column(Float, nullable=True)  # Total amount in foreign currency
+    foreignamountpaid: Mapped[float | None] = mapped_column(Float, nullable=True)  # Amount paid
+    foreignamountunpaid: Mapped[float | None] = mapped_column(Float, nullable=True)  # Amount unpaid/remaining
     
     # Currency
     currency: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     exchangerate: Mapped[float | None] = mapped_column(Float, nullable=True)
     
     # References
-    memo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    memo: Mapped[str | None] = mapped_column(Text, nullable=True)  # Transaction memo for notes/analysis
     
     # Sync metadata
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
