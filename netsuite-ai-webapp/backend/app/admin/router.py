@@ -578,12 +578,14 @@ def get_data_explorer(
             row_count = db.query(func.count(model.id)).scalar() or 0
             logger.info(f"Data Explorer: {table_name} has {row_count} rows")
             
-            # Get column info from model
+            # Get column info from model using column_attrs (handles class_ -> class mapping)
             mapper = inspect(model)
-            columns = [
-                ColumnInfo(name=col.key, type=str(col.type))
-                for col in mapper.columns
-            ]
+            columns = []
+            attr_names = []  # Track the actual Python attribute names
+            for prop in mapper.column_attrs:
+                col = prop.columns[0]
+                columns.append(ColumnInfo(name=prop.key, type=str(col.type)))
+                attr_names.append(prop.key)
             
             # Get sample data
             sample_rows = db.query(model).limit(sample_limit).all()
@@ -591,13 +593,13 @@ def get_data_explorer(
             sample_data = []
             for row in sample_rows:
                 row_dict = {}
-                for col in mapper.columns:
-                    val = getattr(row, col.key)
+                for attr_name in attr_names:
+                    val = getattr(row, attr_name)
                     # Convert to string for JSON serialization
                     if val is not None:
-                        row_dict[col.key] = str(val) if not isinstance(val, (int, float, bool)) else val
+                        row_dict[attr_name] = str(val) if not isinstance(val, (int, float, bool)) else val
                     else:
-                        row_dict[col.key] = None
+                        row_dict[attr_name] = None
                 sample_data.append(row_dict)
             
             tables_info.append(TableInfo(
