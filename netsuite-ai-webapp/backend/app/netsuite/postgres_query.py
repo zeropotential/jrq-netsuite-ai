@@ -122,7 +122,6 @@ def _validate_sql(sql: str) -> None:
     
     # Ensure only allowed tables are queried
     # Extract table names from query (basic pattern matching)
-    import re
     # Match FROM/JOIN followed by table name
     table_pattern = r'\b(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)'
     found_tables = re.findall(table_pattern, sql, re.IGNORECASE)
