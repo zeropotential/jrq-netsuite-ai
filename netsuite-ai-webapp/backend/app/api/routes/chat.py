@@ -52,7 +52,7 @@ def _get_openai_client(api_key: str | None) -> OpenAI:
 
 
 def _classify_intent(client: OpenAI, message: str) -> str:
-    """Use LLM to classify user intent: 'data_query', 'general_question', or 'netsuite_help'."""
+    """Use LLM to classify user intent: 'data_query', 'general_question', 'netsuite_help', or 'unsupported_data'."""
     try:
         response = client.chat.completions.create(
             model=settings.openai_model,
@@ -62,13 +62,17 @@ def _classify_intent(client: OpenAI, message: str) -> str:
                     "content": (
                         "You are an intent classifier for a NetSuite AI Assistant. "
                         "Analyze the user's message and determine which persona should handle it.\n\n"
-                        "RESPOND WITH EXACTLY ONE OF THESE THREE OPTIONS:\n\n"
-                        "1. data_query - User wants to retrieve, query, count, list, or analyze DATA from NetSuite database. "
-                        "Examples: 'how many employees', 'list customers', 'show me sales', 'count invoices', 'get transactions'\n\n"
-                        "2. general_question - User is making conversation, asking about the AI itself, greetings, "
+                        "RESPOND WITH EXACTLY ONE OF THESE FOUR OPTIONS:\n\n"
+                        "1. data_query - User wants to retrieve, query, count, list, or analyze DATA from available tables. "
+                        "Available tables: account, employee, customer, transaction, transactionline. "
+                        "Examples: 'how many employees', 'list customers', 'show me invoices', 'count transactions', 'customer balance'\n\n"
+                        "2. unsupported_data - User wants data that is NOT in available tables. "
+                        "NOT available: items, vendors, inventory, purchase orders, departments, classes, subsidiaries, locations, etc. "
+                        "Examples: 'list all items', 'show inventory', 'how many vendors', 'get purchase orders', 'show departments'\n\n"
+                        "3. general_question - User is making conversation, asking about the AI itself, greetings, "
                         "or topics unrelated to NetSuite. "
                         "Examples: 'hi', 'hello', 'who are you', 'what model are you', 'thanks', 'what can you do'\n\n"
-                        "3. netsuite_help - User wants advice, explanations, best practices, or help about NetSuite "
+                        "4. netsuite_help - User wants advice, explanations, best practices, or help about NetSuite "
                         "processes and features (NOT data retrieval). "
                         "Examples: 'how do I create an invoice', 'explain revenue recognition', 'what is deferred revenue'\n\n"
                         "Reply with ONLY the category name, nothing else."
@@ -81,7 +85,9 @@ def _classify_intent(client: OpenAI, message: str) -> str:
         logger.info(f"LLM intent classification: '{raw_intent}'")
         
         # Extract the intent keyword from the response
-        if "data_query" in raw_intent or "data" in raw_intent:
+        if "unsupported_data" in raw_intent or "unsupported" in raw_intent:
+            return "unsupported_data"
+        elif "data_query" in raw_intent or "data" in raw_intent:
             return "data_query"
         elif "general_question" in raw_intent or "general" in raw_intent:
             return "general_question"
@@ -302,6 +308,21 @@ def chat(
         except Exception as exc:
             logger.error(f"Unexpected error during intent classification: {exc}\n{traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Error classifying intent: {type(exc).__name__}: {exc}") from exc
+        
+        # Handle unsupported data requests
+        if intent == "unsupported_data":
+            answer = (
+                "I can only query data from these synced tables:\n\n"
+                "- **account** - Chart of accounts\n"
+                "- **employee** - Employee records\n"
+                "- **customer** - Customer records\n"
+                "- **transaction** - Transaction headers (invoices, sales orders, payments, etc.)\n"
+                "- **transactionline** - Transaction line details (amounts, items, quantities)\n\n"
+                "The data you're asking about (items, vendors, inventory, purchase orders, departments, classes, etc.) "
+                "is not currently synced to our database.\n\n"
+                "Would you like to ask about accounts, employees, customers, or transactions instead?"
+            )
+            return ChatResponse(answer=answer, source="assistant", sql=None)
         
         # Handle general questions (about the AI, model, etc.)
         if intent == "general_question":

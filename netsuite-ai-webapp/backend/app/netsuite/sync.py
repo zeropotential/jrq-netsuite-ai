@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.db.models.netsuite_mirror import (
     NSAccount,
+    NSCustomer,
+    NSEmployee,
     NSSyncLog,
     NSTransaction,
     NSTransactionLine,
@@ -348,6 +350,171 @@ def sync_transaction_lines(
         return {"status": "error", "error": error_msg, "table": "transactionline"}
 
 
+def sync_employees(db: Session, connection_id: str) -> dict[str, Any]:
+    """
+    Sync Employee table from NetSuite to PostgreSQL.
+    
+    Fetches all employees. Uses SELECT * for dynamic column mapping.
+    """
+    sync_log = _create_sync_log(db, connection_id, "employee")
+    
+    # Define which columns our PostgreSQL table has
+    pg_columns = {
+        "id", "entityid", "firstname", "lastname", "email",
+        "isinactive", "department", "class", "location", "subsidiary",
+        "supervisor", "title", "hiredate", "releasedate"
+    }
+    
+    try:
+        sql = "SELECT * FROM employee"
+        
+        logger.info("Syncing employees from NetSuite...")
+        result = run_query(db, connection_id, sql, limit=50000)
+        
+        rows = result.get("rows", [])
+        columns = result.get("columns", [])
+        
+        if not rows:
+            _complete_sync_log(db, sync_log, "success", rows_synced=0)
+            return {"status": "success", "rows_synced": 0, "table": "employee"}
+        
+        col_lower = [c.lower() for c in columns]
+        available_cols = set(col_lower) & pg_columns
+        
+        if "id" not in available_cols:
+            raise ValueError("Employee table must have 'id' column")
+        
+        logger.info(f"Employee columns available: {available_cols}, NetSuite columns: {col_lower}")
+        
+        records = []
+        for row in rows:
+            full_record = dict(zip(col_lower, row))
+            record = {k: v for k, v in full_record.items() if k in pg_columns}
+            records.append(record)
+        
+        # Deduplicate by id
+        seen_ids = {}
+        for record in records:
+            seen_ids[record["id"]] = record
+        records = list(seen_ids.values())
+        
+        record_cols = set(records[0].keys()) - {"id"}
+        
+        stmt = insert(NSEmployee).values(records)
+        update_set = {"synced_at": text("now()")}
+        for col in record_cols:
+            update_set[col] = stmt.excluded[col]
+        
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["id"],
+            set_=update_set
+        )
+        db.execute(stmt)
+        
+        _complete_sync_log(db, sync_log, "success", rows_synced=len(records))
+        logger.info(f"Synced {len(records)} employees")
+        
+        return {"status": "success", "rows_synced": len(records), "table": "employee"}
+        
+    except JdbcError as e:
+        error_msg = str(e)
+        _complete_sync_log(db, sync_log, "failed", error_message=error_msg)
+        logger.error(f"Failed to sync employees: {error_msg}")
+        return {"status": "error", "error": error_msg, "table": "employee"}
+    except Exception as e:
+        error_msg = str(e)
+        _complete_sync_log(db, sync_log, "failed", error_message=error_msg)
+        logger.exception(f"Unexpected error syncing employees: {error_msg}")
+        return {"status": "error", "error": error_msg, "table": "employee"}
+
+
+def sync_customers(db: Session, connection_id: str) -> dict[str, Any]:
+    """
+    Sync Customer table from NetSuite to PostgreSQL.
+    
+    Fetches all customers. Uses SELECT * for dynamic column mapping.
+    """
+    sync_log = _create_sync_log(db, connection_id, "customer")
+    
+    # Define which columns our PostgreSQL table has
+    pg_columns = {
+        "id", "entityid", "companyname", "email", "phone",
+        "isinactive", "category", "subsidiary", "salesrep",
+        "balance", "creditlimit", "currency", "datecreated", "lastmodifieddate"
+    }
+    
+    try:
+        sql = "SELECT * FROM customer"
+        
+        logger.info("Syncing customers from NetSuite...")
+        result = run_query(db, connection_id, sql, limit=100000)
+        
+        rows = result.get("rows", [])
+        columns = result.get("columns", [])
+        
+        if not rows:
+            _complete_sync_log(db, sync_log, "success", rows_synced=0)
+            return {"status": "success", "rows_synced": 0, "table": "customer"}
+        
+        col_lower = [c.lower() for c in columns]
+        available_cols = set(col_lower) & pg_columns
+        
+        if "id" not in available_cols:
+            raise ValueError("Customer table must have 'id' column")
+        
+        logger.info(f"Customer columns available: {available_cols}, NetSuite columns: {col_lower}")
+        
+        records = []
+        for row in rows:
+            full_record = dict(zip(col_lower, row))
+            record = {k: v for k, v in full_record.items() if k in pg_columns}
+            records.append(record)
+        
+        # Deduplicate by id
+        seen_ids = {}
+        for record in records:
+            seen_ids[record["id"]] = record
+        records = list(seen_ids.values())
+        
+        record_cols = set(records[0].keys()) - {"id"}
+        
+        # Batch insert for large datasets
+        batch_size = 5000
+        total_synced = 0
+        
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            
+            stmt = insert(NSCustomer).values(batch)
+            update_set = {"synced_at": text("now()")}
+            for col in record_cols:
+                update_set[col] = stmt.excluded[col]
+            
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["id"],
+                set_=update_set
+            )
+            db.execute(stmt)
+            total_synced += len(batch)
+            logger.info(f"Synced batch {i // batch_size + 1}: {len(batch)} customers (total: {total_synced})")
+        
+        _complete_sync_log(db, sync_log, "success", rows_synced=total_synced)
+        logger.info(f"Synced {total_synced} customers")
+        
+        return {"status": "success", "rows_synced": total_synced, "table": "customer"}
+        
+    except JdbcError as e:
+        error_msg = str(e)
+        _complete_sync_log(db, sync_log, "failed", error_message=error_msg)
+        logger.error(f"Failed to sync customers: {error_msg}")
+        return {"status": "error", "error": error_msg, "table": "customer"}
+    except Exception as e:
+        error_msg = str(e)
+        _complete_sync_log(db, sync_log, "failed", error_message=error_msg)
+        logger.exception(f"Unexpected error syncing customers: {error_msg}")
+        return {"status": "error", "error": error_msg, "table": "customer"}
+
+
 def sync_all(
     db: Session,
     connection_id: str,
@@ -356,12 +523,18 @@ def sync_all(
     """
     Sync all tables from NetSuite to PostgreSQL.
     
-    Order matters: accounts first, then transactions, then lines.
+    Order matters: accounts first, then employees, customers, transactions, then lines.
     """
     results = {}
     
     # Sync accounts (no date filter)
     results["account"] = sync_accounts(db, connection_id)
+    
+    # Sync employees (no date filter)
+    results["employee"] = sync_employees(db, connection_id)
+    
+    # Sync customers (no date filter)
+    results["customer"] = sync_customers(db, connection_id)
     
     # Sync transactions (date filter)
     results["transaction"] = sync_transactions(db, connection_id, months_back)
@@ -418,6 +591,8 @@ def get_sync_status(db: Session, connection_id: str) -> dict[str, Any]:
     # Get row counts from mirror tables
     counts = {
         "account": db.query(func.count(NSAccount.id)).scalar() or 0,
+        "employee": db.query(func.count(NSEmployee.id)).scalar() or 0,
+        "customer": db.query(func.count(NSCustomer.id)).scalar() or 0,
         "transaction": db.query(func.count(NSTransaction.id)).scalar() or 0,
         "transactionline": db.query(func.count(NSTransactionLine.id)).scalar() or 0,
     }

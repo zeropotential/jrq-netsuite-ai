@@ -20,10 +20,14 @@ ALLOWED_TABLES = {
     "ns_account",
     "ns_transaction", 
     "ns_transactionline",
+    "ns_employee",
+    "ns_customer",
     # Aliases that map to real tables
     "account": "ns_account",
     "transaction": "ns_transaction",
     "transactionline": "ns_transactionline",
+    "employee": "ns_employee",
+    "customer": "ns_customer",
 }
 
 
@@ -46,6 +50,10 @@ def _rewrite_table_names(sql: str) -> str:
         (r'\bTransaction\b', 'ns_transaction'),
         (r'\baccount\b', 'ns_account'),
         (r'\bAccount\b', 'ns_account'),
+        (r'\bemployee\b', 'ns_employee'),
+        (r'\bEmployee\b', 'ns_employee'),
+        (r'\bcustomer\b', 'ns_customer'),
+        (r'\bCustomer\b', 'ns_customer'),
     ]
     
     result = sql
@@ -107,8 +115,8 @@ def _validate_sql(sql: str) -> None:
     table_pattern = r'\b(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)'
     found_tables = re.findall(table_pattern, sql, re.IGNORECASE)
     
-    allowed = {"ns_account", "ns_transaction", "ns_transactionline", 
-               "account", "transaction", "transactionline"}
+    allowed = {"ns_account", "ns_transaction", "ns_transactionline", "ns_employee", "ns_customer",
+               "account", "transaction", "transactionline", "employee", "customer"}
     for table in found_tables:
         if table.lower() not in allowed:
             raise ValueError(f"Table not allowed: {table}. Only NetSuite mirror tables are queryable.")
@@ -176,6 +184,9 @@ def get_postgres_schema() -> str:
 
 These are local PostgreSQL tables mirrored from NetSuite. Use standard PostgreSQL syntax.
 
+IMPORTANT: You can ONLY query these 5 tables. Do NOT generate SQL for any other tables.
+If the user asks about data not in these tables, explain what tables ARE available.
+
 ### Table: transaction (alias for ns_transaction)
 Primary key: id
 | Column | Type | Description |
@@ -186,7 +197,7 @@ Primary key: id
 | trandate | TIMESTAMP | Transaction date |
 | status | VARCHAR | Transaction status |
 | posting | VARCHAR(1) | 'T' for posting, 'F' for non-posting |
-| entity | BIGINT | Customer/vendor ID |
+| entity | BIGINT | Customer/vendor ID (FK to customer.id) |
 | duedate | TIMESTAMP | Due date |
 | closedate | TIMESTAMP | Close date |
 | createddate | TIMESTAMP | Created date |
@@ -229,8 +240,53 @@ Primary key: id
 | parent | BIGINT | Parent account ID |
 | currency | BIGINT | Currency ID |
 
-### JOIN Pattern
+### Table: employee (alias for ns_employee)
+Primary key: id
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGINT | NetSuite internal ID |
+| entityid | VARCHAR | Employee ID/code |
+| firstname | VARCHAR | First name |
+| lastname | VARCHAR | Last name |
+| email | VARCHAR | Email address |
+| isinactive | VARCHAR(1) | 'T' if inactive |
+| department | BIGINT | Department ID |
+| class | BIGINT | Class ID |
+| location | BIGINT | Location ID |
+| subsidiary | BIGINT | Subsidiary ID |
+| supervisor | BIGINT | Supervisor employee ID |
+| title | VARCHAR | Job title |
+| hiredate | TIMESTAMP | Hire date |
+| releasedate | TIMESTAMP | Termination date |
+
+### Table: customer (alias for ns_customer)
+Primary key: id
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGINT | NetSuite internal ID |
+| entityid | VARCHAR | Customer ID/code |
+| companyname | VARCHAR | Company name |
+| email | VARCHAR | Email address |
+| phone | VARCHAR | Phone number |
+| isinactive | VARCHAR(1) | 'T' if inactive |
+| category | BIGINT | Customer category ID |
+| subsidiary | BIGINT | Subsidiary ID |
+| salesrep | BIGINT | Sales rep employee ID |
+| balance | FLOAT | Account balance |
+| creditlimit | FLOAT | Credit limit |
+| currency | BIGINT | Currency ID |
+| datecreated | TIMESTAMP | Date created |
+| lastmodifieddate | TIMESTAMP | Last modified |
+
+### JOIN Patterns
 ```sql
+-- Transaction with customer
+SELECT T.id, T.tranid, T.type, C.companyname
+FROM transaction T
+INNER JOIN customer C ON T.entity = C.id
+WHERE T.type = 'CustInvc'
+
+-- Transaction with lines
 SELECT T.id, T.tranid, T.type, T.trandate, SUM(TL.amount) as total
 FROM transaction T
 INNER JOIN transactionline TL ON T.id = TL.transaction
@@ -243,4 +299,8 @@ GROUP BY T.id, T.tranid, T.type, T.trandate
 - Dates: Use standard PostgreSQL date syntax or TO_DATE()
 - Boolean: 'T' or 'F' strings
 - Aggregations: SUM(), COUNT(), AVG() work on numeric columns
+
+### Available Tables Summary
+ONLY these tables exist: account, employee, customer, transaction, transactionline
+Do NOT query any other tables - they are not synced.
 """

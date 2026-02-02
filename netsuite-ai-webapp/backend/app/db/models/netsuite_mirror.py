@@ -173,3 +173,82 @@ class NSSyncLog(Base):
         Index("ix_ns_sync_log_table_name", "table_name"),
         Index("ix_ns_sync_log_started_at", "started_at"),
     )
+
+
+class NSEmployee(Base):
+    """Mirror of NetSuite Employee table."""
+    __tablename__ = "ns_employee"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)  # NetSuite internal ID
+    
+    # Core fields
+    entityid: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Employee ID/code
+    firstname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lastname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    
+    # Status
+    isinactive: Mapped[str | None] = mapped_column(String(1), nullable=True)  # T/F
+    
+    # Classification
+    department: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    class_: Mapped[int | None] = mapped_column("class", BigInteger, nullable=True)
+    location: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    subsidiary: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    supervisor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    
+    # Job info
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    hiredate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    releasedate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    # Sync metadata
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    
+    __table_args__ = (
+        Index("ix_ns_employee_entityid", "entityid"),
+        Index("ix_ns_employee_email", "email"),
+        Index("ix_ns_employee_department", "department"),
+        Index("ix_ns_employee_isinactive", "isinactive"),
+    )
+
+
+class NSCustomer(Base):
+    """Mirror of NetSuite Customer table."""
+    __tablename__ = "ns_customer"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)  # NetSuite internal ID
+    
+    # Core fields
+    entityid: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Customer ID/code
+    companyname: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    
+    # Status
+    isinactive: Mapped[str | None] = mapped_column(String(1), nullable=True)  # T/F
+    
+    # Classification
+    category: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    subsidiary: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    salesrep: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    
+    # Financials
+    balance: Mapped[float | None] = mapped_column(Float, nullable=True)
+    creditlimit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    
+    # Dates
+    datecreated: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lastmodifieddate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    # Sync metadata
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    
+    __table_args__ = (
+        Index("ix_ns_customer_entityid", "entityid"),
+        Index("ix_ns_customer_companyname", "companyname"),
+        Index("ix_ns_customer_email", "email"),
+        Index("ix_ns_customer_isinactive", "isinactive"),
+        Index("ix_ns_customer_subsidiary", "subsidiary"),
+    )
