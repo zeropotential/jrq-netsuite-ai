@@ -22,7 +22,10 @@ ALLOWED_TABLES = {
     "ns_transactionline",
     "ns_employee",
     "ns_customer",
-    # Aliases that map to real tables
+}
+
+# Aliases that map to real tables
+TABLE_ALIASES = {
     "account": "ns_account",
     "transaction": "ns_transaction",
     "transactionline": "ns_transactionline",
