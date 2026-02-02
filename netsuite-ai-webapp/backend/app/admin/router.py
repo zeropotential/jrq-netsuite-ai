@@ -376,10 +376,15 @@ def sync_netsuite_data(
     
     Tables synced:
     - account: All accounts
+    - employee: All employees
+    - customer: All customers
     - transaction: Transactions created in last N months
     - transactionline: Lines for those transactions
     """
-    from app.netsuite.sync import sync_all, sync_accounts, sync_transactions, sync_transaction_lines
+    from app.netsuite.sync import (
+        sync_all, sync_accounts, sync_transactions, sync_transaction_lines,
+        sync_employees, sync_customers
+    )
     
     payload = payload or SyncRequest()
     
@@ -390,6 +395,10 @@ def sync_netsuite_data(
             for table in payload.tables:
                 if table == "account":
                     results["account"] = sync_accounts(db, connection_id)
+                elif table == "employee":
+                    results["employee"] = sync_employees(db, connection_id)
+                elif table == "customer":
+                    results["customer"] = sync_customers(db, connection_id)
                 elif table == "transaction":
                     results["transaction"] = sync_transactions(db, connection_id, payload.months_back)
                 elif table == "transactionline":
