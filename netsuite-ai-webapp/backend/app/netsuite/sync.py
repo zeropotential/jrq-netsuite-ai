@@ -293,8 +293,16 @@ def sync_transaction_lines(
             _complete_sync_log(db, sync_log, "success", rows_synced=0)
             return {"status": "success", "rows_synced": 0, "table": "transactionline"}
         
-        if "id" not in (set(all_records[0].keys()) | {"class_"} - {"class"}):
+        if "id" not in all_records[0].keys():
             raise ValueError("TransactionLine must have 'id' column")
+        
+        # Deduplicate records by id (keep last occurrence)
+        # This prevents "ON CONFLICT DO UPDATE command cannot affect row a second time"
+        seen_ids = {}
+        for record in all_records:
+            seen_ids[record["id"]] = record
+        all_records = list(seen_ids.values())
+        logger.info(f"Deduplicated to {len(all_records)} unique transaction lines")
         
         # Get the available columns from first record for dynamic upsert
         record_cols = set(all_records[0].keys()) - {"id"}  # Exclude id from update
