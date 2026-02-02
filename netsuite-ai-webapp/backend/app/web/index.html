@@ -430,13 +430,13 @@
         </div>
         <div class="nav">
           <div class="nav-item active" data-view="chat">Chat Workspace</div>
-          <div class="nav-item" data-view="reports">Reports</div>
           <div class="nav-item" data-view="connections">Connections</div>
+          <div class="nav-item" data-view="explorer">Data Explorer</div>
           <div class="nav-item" data-view="kb">Knowledge Base</div>
-          <div class="nav-section">Recent</div>
+          <!-- <div class="nav-section">Recent</div>
           <div class="nav-item">Revenue Insights</div>
           <div class="nav-item">AP Aging</div>
-          <div class="nav-item">Inventory Turns</div>
+          <div class="nav-item">Inventory Turns</div> -->
         </div>
       </aside>
       <main class="main">
@@ -614,6 +614,20 @@
             </div>
           </div>
         </section>
+
+        <!-- Data Explorer View -->
+        <section class="panel hidden" id="explorerView">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="margin: 0; font-size: 18px; color: var(--text);">PostgreSQL Mirror Tables</h2>
+            <button id="refreshExplorerBtn" style="padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+              Refresh Data
+            </button>
+          </div>
+          <div id="explorerStatus" style="color: var(--muted); margin-bottom: 16px;"></div>
+          <div id="explorerContent" style="display: grid; gap: 20px;">
+            <!-- Tables will be rendered here -->
+          </div>
+        </section>
       </main>
     </div>
 
@@ -663,6 +677,10 @@
       const postgresMirrorTotalRows = document.getElementById("postgresMirrorTotalRows");
       const postgresMirrorTableCount = document.getElementById("postgresMirrorTableCount");
       const postgresMirrorTablesList = document.getElementById("postgresMirrorTablesList");
+      const explorerView = document.getElementById("explorerView");
+      const explorerContent = document.getElementById("explorerContent");
+      const explorerStatus = document.getElementById("explorerStatus");
+      const refreshExplorerBtn = document.getElementById("refreshExplorerBtn");
       const postgresMirrorError = document.getElementById("postgresMirrorError");
 
       // Session-based chat history (clears on page refresh)
@@ -700,6 +718,125 @@
         });
       };
 
+      // Data Explorer functions
+      const loadDataExplorer = async () => {
+        explorerStatus.textContent = "Loading table data...";
+        explorerContent.innerHTML = "";
+        refreshExplorerBtn.disabled = true;
+        
+        try {
+          const response = await fetch("/admin/data-explorer");
+          if (!response.ok) {
+            throw new Error(`Failed to load data: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          explorerStatus.textContent = "";
+          
+          // Render each table
+          data.tables.forEach(table => {
+            const tableCard = document.createElement("div");
+            tableCard.className = "kb-card";
+            tableCard.style.padding = "20px";
+            
+            // Table header
+            const header = document.createElement("div");
+            header.style.cssText = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;";
+            header.innerHTML = `
+              <div>
+                <strong style="font-size: 16px; color: var(--text);">${table.name}</strong>
+                <span style="margin-left: 12px; padding: 4px 10px; background: ${table.row_count > 0 ? '#dcfce7' : '#fef3c7'}; color: ${table.row_count > 0 ? '#166534' : '#92400e'}; border-radius: 999px; font-size: 12px; font-weight: 600;">
+                  ${table.row_count.toLocaleString()} rows
+                </span>
+              </div>
+            `;
+            tableCard.appendChild(header);
+            
+            // Columns section
+            const colsSection = document.createElement("div");
+            colsSection.style.marginBottom = "16px";
+            colsSection.innerHTML = `
+              <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                Columns (${table.columns.length})
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                ${table.columns.map(col => `
+                  <span style="padding: 4px 8px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; font-size: 12px;">
+                    <span style="color: var(--text);">${col.name}</span>
+                    <span style="color: var(--muted); margin-left: 4px;">${col.type.split('(')[0]}</span>
+                  </span>
+                `).join('')}
+              </div>
+            `;
+            tableCard.appendChild(colsSection);
+            
+            // Sample data section (only if there's data)
+            if (table.sample_data.length > 0) {
+              const dataSection = document.createElement("div");
+              dataSection.innerHTML = `
+                <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                  Sample Data (first ${table.sample_data.length} rows)
+                </div>
+              `;
+              
+              // Create scrollable table
+              const tableWrapper = document.createElement("div");
+              tableWrapper.style.cssText = "overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;";
+              
+              const dataTable = document.createElement("table");
+              dataTable.style.cssText = "width: 100%; border-collapse: collapse; font-size: 12px;";
+              
+              // Header row
+              const thead = document.createElement("thead");
+              thead.innerHTML = `
+                <tr style="background: var(--card-bg);">
+                  ${table.columns.slice(0, 8).map(col => `
+                    <th style="padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 600; white-space: nowrap;">
+                      ${col.name}
+                    </th>
+                  `).join('')}
+                  ${table.columns.length > 8 ? '<th style="padding: 8px 12px; color: var(--muted);">...</th>' : ''}
+                </tr>
+              `;
+              dataTable.appendChild(thead);
+              
+              // Data rows
+              const tbody = document.createElement("tbody");
+              table.sample_data.forEach((row, i) => {
+                const tr = document.createElement("tr");
+                tr.style.cssText = i % 2 === 0 ? "" : "background: var(--card-bg);";
+                tr.innerHTML = table.columns.slice(0, 8).map(col => {
+                  const val = row[col.name];
+                  const displayVal = val === null ? '<span style="color: var(--muted);">null</span>' : 
+                                    String(val).length > 30 ? String(val).substring(0, 30) + '...' : val;
+                  return `<td style="padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap;">${displayVal}</td>`;
+                }).join('') + (table.columns.length > 8 ? '<td style="padding: 8px 12px; color: var(--muted);">...</td>' : '');
+                tbody.appendChild(tr);
+              });
+              dataTable.appendChild(tbody);
+              
+              tableWrapper.appendChild(dataTable);
+              dataSection.appendChild(tableWrapper);
+              tableCard.appendChild(dataSection);
+            } else {
+              const emptyMsg = document.createElement("div");
+              emptyMsg.style.cssText = "padding: 20px; text-align: center; color: var(--muted); background: var(--card-bg); border-radius: 6px;";
+              emptyMsg.textContent = "No data synced yet. Run a sync from the Connections page.";
+              tableCard.appendChild(emptyMsg);
+            }
+            
+            explorerContent.appendChild(tableCard);
+          });
+          
+        } catch (err) {
+          explorerStatus.textContent = `Error: ${err.message}`;
+        } finally {
+          refreshExplorerBtn.disabled = false;
+        }
+      };
+      
+      refreshExplorerBtn?.addEventListener("click", loadDataExplorer);
+
       const setView = (view) => {
         document.querySelectorAll(".nav-item").forEach((el) => {
           el.classList.toggle("active", el.dataset.view === view);
@@ -708,6 +845,7 @@
         chatView.classList.add("hidden");
         kbView.classList.add("hidden");
         connectionsView.classList.add("hidden");
+        explorerView.classList.add("hidden");
         
         if (view === "kb") {
           kbView.classList.remove("hidden");
@@ -719,6 +857,11 @@
           viewTitle.textContent = "Connections";
           viewBadge.textContent = "Health Status";
           checkConnectionsHealth();
+        } else if (view === "explorer") {
+          explorerView.classList.remove("hidden");
+          viewTitle.textContent = "Data Explorer";
+          viewBadge.textContent = "PostgreSQL Mirror";
+          loadDataExplorer();
         } else {
           chatView.classList.remove("hidden");
           viewTitle.textContent = "Chat Workspace";

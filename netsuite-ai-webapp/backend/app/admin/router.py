@@ -528,3 +528,173 @@ def get_sync_status(
         row_counts=result["row_counts"],
         background_sync=bg_status,
     )
+
+
+class ColumnInfo(BaseModel):
+    name: str
+    type: str
+
+
+class TableInfo(BaseModel):
+    name: str
+    row_count: int
+    columns: list[ColumnInfo]
+    sample_data: list[dict]
+
+
+class DataExplorerResponse(BaseModel):
+    tables: list[TableInfo]
+
+
+@router.get("/data-explorer", response_model=DataExplorerResponse)
+def get_data_explorer(
+    db: Session = Depends(get_db),
+    sample_limit: int = 10,
+) -> DataExplorerResponse:
+    """
+    Get information about all PostgreSQL mirror tables including columns and sample data.
+    """
+    from sqlalchemy import inspect, text, func
+    from app.db.models.netsuite_mirror import (
+        NSAccount, NSEmployee, NSCustomer, NSTransaction, NSTransactionLine
+    )
+    
+    tables_info = []
+    
+    table_models = [
+        ("account", NSAccount),
+        ("employee", NSEmployee),
+        ("customer", NSCustomer),
+        ("transaction", NSTransaction),
+        ("transactionline", NSTransactionLine),
+    ]
+    
+    for table_name, model in table_models:
+        try:
+            # Get row count
+            row_count = db.query(func.count(model.id)).scalar() or 0
+            
+            # Get column info from model
+            mapper = inspect(model)
+            columns = [
+                ColumnInfo(name=col.key, type=str(col.type))
+                for col in mapper.columns
+            ]
+            
+            # Get sample data
+            sample_rows = db.query(model).limit(sample_limit).all()
+            sample_data = []
+            for row in sample_rows:
+                row_dict = {}
+                for col in mapper.columns:
+                    val = getattr(row, col.key)
+                    # Convert to string for JSON serialization
+                    if val is not None:
+                        row_dict[col.key] = str(val) if not isinstance(val, (int, float, bool)) else val
+                    else:
+                        row_dict[col.key] = None
+                sample_data.append(row_dict)
+            
+            tables_info.append(TableInfo(
+                name=table_name,
+                row_count=row_count,
+                columns=columns,
+                sample_data=sample_data,
+            ))
+        except Exception as e:
+            # Table might not exist yet
+            tables_info.append(TableInfo(
+                name=table_name,
+                row_count=0,
+                columns=[],
+                sample_data=[],
+            ))
+    
+    return DataExplorerResponse(tables=tables_info)
+
+
+class TableQueryRequest(BaseModel):
+    table: str
+    limit: int = Field(default=100, le=1000)
+    offset: int = Field(default=0, ge=0)
+    where: str | None = None
+
+
+class TableQueryResponse(BaseModel):
+    table: str
+    columns: list[str]
+    rows: list[dict]
+    total_count: int
+    limit: int
+    offset: int
+
+
+@router.post("/data-explorer/query", response_model=TableQueryResponse)
+def query_table(
+    payload: TableQueryRequest,
+    db: Session = Depends(get_db),
+) -> TableQueryResponse:
+    """
+    Query a specific table with optional filtering.
+    """
+    from sqlalchemy import inspect, func, text
+    from app.db.models.netsuite_mirror import (
+        NSAccount, NSEmployee, NSCustomer, NSTransaction, NSTransactionLine
+    )
+    
+    table_map = {
+        "account": NSAccount,
+        "employee": NSEmployee,
+        "customer": NSCustomer,
+        "transaction": NSTransaction,
+        "transactionline": NSTransactionLine,
+    }
+    
+    if payload.table not in table_map:
+        raise HTTPException(status_code=400, detail=f"Invalid table: {payload.table}")
+    
+    model = table_map[payload.table]
+    mapper = inspect(model)
+    columns = [col.key for col in mapper.columns]
+    
+    # Get total count
+    total_count = db.query(func.count(model.id)).scalar() or 0
+    
+    # Build query
+    query = db.query(model)
+    
+    # Apply basic filtering if provided (simple column = value)
+    if payload.where:
+        # Parse simple conditions like "type = 'CustInvc'"
+        # Only allow safe patterns
+        import re
+        safe_pattern = r"^([a-zA-Z_]+)\s*=\s*'([^']*)'$"
+        match = re.match(safe_pattern, payload.where.strip())
+        if match:
+            col_name, col_value = match.groups()
+            if hasattr(model, col_name):
+                query = query.filter(getattr(model, col_name) == col_value)
+    
+    # Apply pagination
+    rows = query.offset(payload.offset).limit(payload.limit).all()
+    
+    # Convert to dicts
+    result_rows = []
+    for row in rows:
+        row_dict = {}
+        for col in mapper.columns:
+            val = getattr(row, col.key)
+            if val is not None:
+                row_dict[col.key] = str(val) if not isinstance(val, (int, float, bool)) else val
+            else:
+                row_dict[col.key] = None
+        result_rows.append(row_dict)
+    
+    return TableQueryResponse(
+        table=payload.table,
+        columns=columns,
+        rows=result_rows,
+        total_count=total_count,
+        limit=payload.limit,
+        offset=payload.offset,
+    )
