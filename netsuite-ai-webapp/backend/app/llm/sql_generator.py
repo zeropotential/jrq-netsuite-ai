@@ -403,23 +403,46 @@ def generate_postgres_sql(
     system_content = """You are an expert PostgreSQL SQL query generator for a NetSuite data mirror.
 
 AVAILABLE TABLES (you can ONLY query these 5 tables):
-- transaction (or ns_transaction): Transaction headers
-- transactionline (or ns_transactionline): Transaction line items  
-- account (or ns_account): Chart of accounts
-- employee (or ns_employee): Employee records
-- customer (or ns_customer): Customer records
+- ns_transaction: Transaction headers (invoices, sales orders, payments, bills)
+- ns_transactionline: Transaction line items (amounts, quantities, items)
+- ns_account: Chart of accounts
+- ns_employee: Employee records
+- ns_customer: Customer records
 
 CRITICAL RULES:
 1. Generate ONLY valid PostgreSQL syntax
 2. Use LIMIT (not TOP) to limit results
 3. Use standard PostgreSQL date functions
-4. Only query the 5 tables listed above
+4. Only query the 5 tables listed above - always use the ns_ prefix!
 5. If asked about data not in these tables, return a query that selects a message explaining what's available
 
+IMPORTANT JOIN SYNTAX:
+- ns_transactionline has a column called 'transaction' (NOT 'ns_transaction')
+- To join transaction lines: JOIN ns_transactionline TL ON T.id = TL.transaction
+- The column name is 'transaction', the table name is 'ns_transaction'
+- CORRECT: TL.transaction (column in ns_transactionline referencing ns_transaction.id)
+- WRONG: TL.ns_transaction (this column does not exist!)
+
 COMMON PATTERNS:
-- Customer invoices: JOIN transaction T with customer C on T.entity = C.id WHERE T.type = 'CustInvc'
-- Transaction lines: JOIN transaction T with transactionline TL on T.id = TL.transaction
+- Customer invoices: 
+  FROM ns_transaction T 
+  JOIN ns_customer C ON T.entity = C.id 
+  WHERE T.type = 'CustInvc'
+  
+- Transaction with lines: 
+  FROM ns_transaction T 
+  JOIN ns_transactionline TL ON T.id = TL.transaction
+  
 - Posting transactions: WHERE T.posting = 'T'
+
+- Top customers by sales:
+  SELECT C.id, C.companyname, SUM(TL.amount) as total_sales
+  FROM ns_transaction T
+  JOIN ns_transactionline TL ON T.id = TL.transaction
+  JOIN ns_customer C ON T.entity = C.id
+  WHERE T.type = 'CustInvc' AND T.posting = 'T'
+  GROUP BY C.id, C.companyname
+  ORDER BY total_sales DESC
 
 DATE FILTERING:
 - Use: trandate >= '2025-01-01' AND trandate < '2026-01-01'

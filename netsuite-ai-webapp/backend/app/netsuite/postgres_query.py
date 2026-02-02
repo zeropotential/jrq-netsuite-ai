@@ -42,26 +42,39 @@ def _rewrite_table_names(sql: str) -> str:
     - account -> ns_account
     - transaction -> ns_transaction
     - transactionline -> ns_transactionline
+    
+    IMPORTANT: Only replace table names, not column references.
+    Column references like "TL.transaction" should NOT be rewritten.
     """
-    # Replace table names (case-insensitive, word boundaries)
+    # Only replace table names that appear after FROM, JOIN, INTO, UPDATE, or at start
+    # Use negative lookbehind to avoid replacing column references (after a dot)
     # Order matters - do transactionline before transaction
-    replacements = [
-        (r'\btransactionline\b', 'ns_transactionline'),
-        (r'\btransactionLine\b', 'ns_transactionline'),
-        (r'\bTransactionLine\b', 'ns_transactionline'),
-        (r'\btransaction\b', 'ns_transaction'),
-        (r'\bTransaction\b', 'ns_transaction'),
-        (r'\baccount\b', 'ns_account'),
-        (r'\bAccount\b', 'ns_account'),
-        (r'\bemployee\b', 'ns_employee'),
-        (r'\bEmployee\b', 'ns_employee'),
-        (r'\bcustomer\b', 'ns_customer'),
-        (r'\bCustomer\b', 'ns_customer'),
-    ]
+    
+    def replace_table_name(sql_text: str, old_name: str, new_name: str) -> str:
+        """Replace table name only when it's used as a table, not a column."""
+        # Pattern matches table name when:
+        # 1. After FROM, JOIN (various types), INTO, UPDATE (case insensitive)
+        # 2. NOT preceded by a dot (which would make it a column reference)
+        
+        # First, handle cases after SQL keywords
+        keywords = ['FROM', 'JOIN', 'INNER JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'OUTER JOIN', 'CROSS JOIN']
+        result = sql_text
+        
+        for kw in keywords:
+            # Pattern: keyword + whitespace + table_name (case insensitive)
+            pattern = rf'({kw}\s+)({old_name})(\s|$|\s+[A-Za-z])'
+            result = re.sub(pattern, rf'\1{new_name}\3', result, flags=re.IGNORECASE)
+        
+        return result
     
     result = sql
-    for pattern, replacement in replacements:
-        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+    
+    # Apply replacements - order matters (transactionline before transaction)
+    result = replace_table_name(result, 'transactionline', 'ns_transactionline')
+    result = replace_table_name(result, 'transaction', 'ns_transaction')
+    result = replace_table_name(result, 'account', 'ns_account')
+    result = replace_table_name(result, 'employee', 'ns_employee')
+    result = replace_table_name(result, 'customer', 'ns_customer')
     
     return result
 
@@ -195,10 +208,10 @@ def get_postgres_schema() -> str:
 
 These are local PostgreSQL tables mirrored from NetSuite. Use standard PostgreSQL syntax.
 
-IMPORTANT: You can ONLY query these 5 tables. Do NOT generate SQL for any other tables.
+IMPORTANT: You can ONLY query these 5 tables. Always use the ns_ prefix for table names!
 If the user asks about data not in these tables, explain what tables ARE available.
 
-### Table: transaction (alias for ns_transaction)
+### Table: ns_transaction
 Primary key: id
 | Column | Type | Description |
 |--------|------|-------------|
@@ -208,7 +221,7 @@ Primary key: id
 | trandate | TIMESTAMP | Transaction date |
 | status | VARCHAR | Transaction status |
 | posting | VARCHAR(1) | 'T' for posting, 'F' for non-posting |
-| entity | BIGINT | Customer/vendor ID (FK to customer.id) |
+| entity | BIGINT | Customer/vendor ID (FK to ns_customer.id) |
 | duedate | TIMESTAMP | Due date |
 | closedate | TIMESTAMP | Close date |
 | createddate | TIMESTAMP | Created date |
@@ -218,13 +231,13 @@ Primary key: id
 | exchangerate | FLOAT | Exchange rate |
 | memo | TEXT | Memo/notes |
 
-### Table: transactionline (alias for ns_transactionline)
+### Table: ns_transactionline
 Primary key: id
-Foreign key: transaction -> ns_transaction.id
+Foreign key: transaction -> ns_transaction.id (NOTE: the column is named 'transaction', not 'ns_transaction')
 | Column | Type | Description |
 |--------|------|-------------|
 | id | BIGINT | Line unique ID |
-| transaction | BIGINT | FK to transaction.id |
+| transaction | BIGINT | FK to ns_transaction.id (use this for JOINs: TL.transaction = T.id) |
 | linesequencenumber | BIGINT | Line sequence |
 | item | BIGINT | Item ID |
 | amount | FLOAT | Line amount (use for SUM) |
@@ -237,7 +250,7 @@ Foreign key: transaction -> ns_transaction.id
 | location | BIGINT | Location ID |
 | memo | TEXT | Line memo |
 
-### Table: account (alias for ns_account)
+### Table: ns_account
 Primary key: id
 | Column | Type | Description |
 |--------|------|-------------|
@@ -251,7 +264,7 @@ Primary key: id
 | parent | BIGINT | Parent account ID |
 | currency | BIGINT | Currency ID |
 
-### Table: employee (alias for ns_employee)
+### Table: ns_employee
 Primary key: id
 | Column | Type | Description |
 |--------|------|-------------|
@@ -270,7 +283,7 @@ Primary key: id
 | hiredate | TIMESTAMP | Hire date |
 | releasedate | TIMESTAMP | Termination date |
 
-### Table: customer (alias for ns_customer)
+### Table: ns_customer
 Primary key: id
 | Column | Type | Description |
 |--------|------|-------------|
@@ -289,20 +302,30 @@ Primary key: id
 | datecreated | TIMESTAMP | Date created |
 | lastmodifieddate | TIMESTAMP | Last modified |
 
-### JOIN Patterns
+### JOIN Patterns (IMPORTANT: note the column vs table names)
 ```sql
 -- Transaction with customer
 SELECT T.id, T.tranid, T.type, C.companyname
-FROM transaction T
-INNER JOIN customer C ON T.entity = C.id
+FROM ns_transaction T
+INNER JOIN ns_customer C ON T.entity = C.id
 WHERE T.type = 'CustInvc'
 
--- Transaction with lines
+-- Transaction with lines (NOTE: column is 'transaction', table is 'ns_transactionline')
 SELECT T.id, T.tranid, T.type, T.trandate, SUM(TL.amount) as total
-FROM transaction T
-INNER JOIN transactionline TL ON T.id = TL.transaction
+FROM ns_transaction T
+INNER JOIN ns_transactionline TL ON T.id = TL.transaction
 WHERE T.type = 'CustInvc' AND T.posting = 'T'
 GROUP BY T.id, T.tranid, T.type, T.trandate
+
+-- Top customers by sales
+SELECT C.id, C.companyname, SUM(TL.amount) as total_sales
+FROM ns_transaction T
+INNER JOIN ns_transactionline TL ON T.id = TL.transaction
+INNER JOIN ns_customer C ON T.entity = C.id
+WHERE T.type = 'CustInvc' AND T.posting = 'T'
+GROUP BY C.id, C.companyname
+ORDER BY total_sales DESC
+LIMIT 10
 ```
 
 ### SQL Syntax (PostgreSQL)
@@ -312,6 +335,6 @@ GROUP BY T.id, T.tranid, T.type, T.trandate
 - Aggregations: SUM(), COUNT(), AVG() work on numeric columns
 
 ### Available Tables Summary
-ONLY these tables exist: account, employee, customer, transaction, transactionline
-Do NOT query any other tables - they are not synced.
+ONLY these tables exist: ns_account, ns_employee, ns_customer, ns_transaction, ns_transactionline
+Always use the ns_ prefix! Do NOT query any other tables - they are not synced.
 """
