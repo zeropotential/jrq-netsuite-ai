@@ -345,14 +345,17 @@ class LearningService:
         if not errors:
             return ""
         
-        lines = ["PAST MISTAKES TO AVOID:"]
+        lines = ["PAST MISTAKES TO AVOID (do NOT repeat these errors):"]
         for error in errors:
-            lines.append(f"\n- Question: {error.question[:100]}...")
-            lines.append(f"  BAD SQL: {error.bad_sql[:100]}...")
+            lines.append(f"\n❌ Question: {error.question[:100]}...")
+            lines.append(f"   BAD SQL: {error.bad_sql[:150]}...")
             if error.explanation:
-                lines.append(f"  Why wrong: {error.explanation}")
+                lines.append(f"   Why wrong: {error.explanation}")
+            if error.error_message:
+                lines.append(f"   Error: {error.error_message[:100]}...")
             if error.correct_sql:
-                lines.append(f"  Correct approach: {error.correct_sql[:100]}...")
+                lines.append(f"   ✓ Correct approach: {error.correct_sql[:150]}...")
+            lines.append(f"   (occurred {error.occurrence_count} times)")
         
         return "\n".join(lines)
     

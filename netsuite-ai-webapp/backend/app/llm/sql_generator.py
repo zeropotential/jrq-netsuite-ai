@@ -451,7 +451,7 @@ COMMON PATTERNS:
   
 - Posting transactions: WHERE T.posting = 'T'
 
-- Top customers by sales:
+- Top customers by sales (using transaction lines for amounts):
   SELECT C.id, C.companyname, SUM(TL.amount) as total_sales
   FROM ns_transaction T
   JOIN ns_transactionline TL ON T.id = TL.transaction
@@ -460,7 +460,20 @@ COMMON PATTERNS:
   GROUP BY C.id, C.companyname
   ORDER BY total_sales DESC
 
-- Outstanding invoices (unpaid):
+- Top customers with paid/unpaid analysis:
+  SELECT C.id, C.companyname, 
+    COUNT(T.id) as invoice_count,
+    COALESCE(SUM(T.foreigntotal), 0) as total_invoiced,
+    COALESCE(SUM(T.foreignamountpaid), 0) as total_paid,
+    COALESCE(SUM(T.foreignamountunpaid), 0) as total_unpaid,
+    ROUND(100.0 * COALESCE(SUM(T.foreignamountpaid), 0) / NULLIF(COALESCE(SUM(T.foreigntotal), 0), 0), 2) as percent_paid
+  FROM ns_transaction T
+  JOIN ns_customer C ON T.entity = C.id
+  WHERE T.type = 'CustInvc' AND T.posting = 'T'
+  GROUP BY C.id, C.companyname
+  ORDER BY total_invoiced DESC
+
+- Outstanding invoices:
   SELECT tranid, trandate, foreigntotal, foreignamountpaid, foreignamountunpaid, memo
   FROM ns_transaction
   WHERE type = 'CustInvc' AND foreignamountunpaid > 0
@@ -468,6 +481,12 @@ COMMON PATTERNS:
 - Find transactions by memo keyword:
   SELECT * FROM ns_transaction
   WHERE memo ILIKE '%keyword%'
+
+IMPORTANT FOR AMOUNTS:
+- ns_transaction has: foreigntotal (total), foreignamountpaid (paid), foreignamountunpaid (unpaid)
+- ns_transactionline has: amount, netamount, foreignamount for line-level amounts
+- For header-level totals: use foreigntotal from ns_transaction
+- For line-level analysis: use SUM(TL.amount) from ns_transactionline
 
 DATE FILTERING:
 - Use: trandate >= '2025-01-01' AND trandate < '2026-01-01'

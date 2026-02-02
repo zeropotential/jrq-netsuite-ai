@@ -459,6 +459,25 @@ def chat(
     # Do not auto-wrap or limit SQL here. SuiteAnalytics requires TOP in the same
     # SELECT as ORDER BY, and wrapping can invalidate queries.
 
+    def _extract_error_explanation(error_msg: str, sql: str) -> str:
+        """Extract a concise explanation from an error for learning."""
+        error_lower = str(error_msg).lower()
+        if "column" in error_lower and "does not exist" in error_lower:
+            # Extract the column name
+            import re
+            match = re.search(r'column (\S+) does not exist', error_lower)
+            if match:
+                bad_col = match.group(1)
+                return f"Column '{bad_col}' does not exist. Check the table schema for valid columns."
+        if "relation" in error_lower and "does not exist" in error_lower:
+            match = re.search(r'relation "?(\S+)"? does not exist', error_lower)
+            if match:
+                bad_table = match.group(1)
+                return f"Table '{bad_table}' does not exist. Use ns_ prefix tables: ns_transaction, ns_customer, etc."
+        if "syntax error" in error_lower:
+            return "SQL syntax error. Check query structure."
+        return str(error_msg)[:200]
+
     try:
         logger.info(f"Executing SQL ({payload.query_mode} mode): {sql[:100]}...")
         
@@ -477,11 +496,13 @@ def chat(
         # Record SQL execution error for learning
         if not is_raw_sql:
             try:
+                error_explanation = _extract_error_explanation(str(exc), sql)
                 learning_service.record_error(
                     question=prompt,
                     bad_sql=sql,
                     error_type="jdbc_error",
                     error_message=str(exc),
+                    explanation=error_explanation,
                 )
             except Exception:
                 pass
@@ -502,6 +523,20 @@ def chat(
         raise HTTPException(status_code=400, detail=f"{exc} | SQL: {sql}") from exc
     except Exception as exc:
         logger.error(f"Query execution error: {exc}\n{traceback.format_exc()}")
+        # Record general execution error for learning (includes postgres errors)
+        if not is_raw_sql:
+            try:
+                error_type = "postgres_error" if use_postgres else "execution_error"
+                error_explanation = _extract_error_explanation(str(exc), sql)
+                learning_service.record_error(
+                    question=prompt,
+                    bad_sql=sql,
+                    error_type=error_type,
+                    error_message=str(exc),
+                    explanation=error_explanation,
+                )
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=f"Query failed: {type(exc).__name__}: {exc} | SQL: {sql}") from exc
 
     columns = result.get("columns", [])
