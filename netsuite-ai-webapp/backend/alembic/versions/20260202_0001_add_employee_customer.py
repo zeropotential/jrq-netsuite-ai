@@ -1,7 +1,7 @@
 """Add employee and customer mirror tables
 
 Revision ID: 20260202_0001
-Revises: 20260202_0001_netsuite_mirror
+Revises: 20260202_0001
 Create Date: 2026-02-02
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "20260202_0002"
-down_revision = "20260202_0001_netsuite_mirror"
+down_revision = "20260202_0001"
 branch_labels = None
 depends_on = None
 
