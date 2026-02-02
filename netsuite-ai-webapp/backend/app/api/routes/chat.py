@@ -43,19 +43,25 @@ class ChatResponse(BaseModel):
     html: str | None = None
 
 
+# Fast model for quick tasks like intent classification (reasoning models are too slow)
+FAST_MODEL = "gpt-5-mini"
+
+
 def _get_openai_client(api_key: str | None) -> OpenAI:
     """Get OpenAI client with provided or configured API key."""
     key = api_key or settings.openai_api_key
     if not key:
         raise LlmError("OPENAI_API_KEY is not configured")
-    return OpenAI(api_key=key)
+    return OpenAI(api_key=key, timeout=120.0)  # 2 minute timeout
 
 
 def _classify_intent(client: OpenAI, message: str) -> str:
     """Use LLM to classify user intent: 'data_query', 'general_question', 'netsuite_help', or 'unsupported_data'."""
     try:
+        # Use fast model for classification - reasoning models (o1/o3) are too slow for this
         response = client.chat.completions.create(
-            model=settings.openai_model,
+            model=FAST_MODEL,
+            timeout=30.0,  # 30 second timeout for classification
             messages=[
                 {
                     "role": "system",
@@ -218,6 +224,7 @@ def _answer_general_question(
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=messages,
+        timeout=90.0,  # 90 second timeout
         **_get_completion_kwargs(4096, temperature=0.7),
     )
     return (response.choices[0].message.content or "").strip()
@@ -259,6 +266,7 @@ def _answer_netsuite_help(
     response = client.chat.completions.create(
         model=settings.openai_model,
         messages=messages,
+        timeout=90.0,  # 90 second timeout
         **_get_completion_kwargs(4096, temperature=0.7),
     )
     return (response.choices[0].message.content or "").strip()

@@ -347,6 +347,7 @@ def generate_oracle_sql(
             {"role": "system", "content": system_content},
             {"role": "user", "content": user},
         ],
+        timeout=90.0,  # 90 second timeout for SQL generation
         **_get_completion_kwargs(max_tokens),
     )
 
@@ -451,6 +452,7 @@ Generate a PostgreSQL query. Return ONLY the SQL, no explanation."""
             {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ],
+        timeout=90.0,  # 90 second timeout for SQL generation
         **_get_completion_kwargs(max_tokens),
     )
 

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # LLM (SQL generation)
     llm_provider: str = "openai"
     openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
+    openai_model: str = "gpt-5-mini"
 
 
 settings = Settings()
