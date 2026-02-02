@@ -251,6 +251,35 @@
         opacity: 0.6;
         cursor: not-allowed;
       }
+      .feedback-buttons {
+        display: flex;
+        align-items: center;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border);
+      }
+      .feedback-btn {
+        padding: 4px 10px;
+        margin-right: 6px;
+        border-radius: 6px;
+        background: var(--soft);
+        border: 1px solid var(--border);
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.2s;
+      }
+      .feedback-btn:hover {
+        background: var(--card);
+        transform: scale(1.1);
+      }
+      .feedback-btn.positive:hover {
+        background: #dcfce7;
+        border-color: #22c55e;
+      }
+      .feedback-btn.negative:hover {
+        background: #fee2e2;
+        border-color: #ef4444;
+      }
       .chat {
         margin-top: 12px;
         display: flex;
@@ -1374,8 +1403,60 @@
         });
       };
 
+      // Generate feedback buttons HTML
+      const getFeedbackButtonsHtml = (feedbackId) => {
+        if (!feedbackId) return "";
+        return `
+          <div class="feedback-buttons" data-feedback-id="${feedbackId}">
+            <span style="color:var(--muted);font-size:12px;margin-right:8px;">Was this helpful?</span>
+            <button class="feedback-btn positive" onclick="submitFeedback('${feedbackId}', 'positive')" title="Good response">👍</button>
+            <button class="feedback-btn negative" onclick="submitFeedback('${feedbackId}', 'negative')" title="Bad response">👎</button>
+          </div>
+        `;
+      };
+
+      // Store feedback data for each response
+      const feedbackDataStore = {};
+
+      // Submit feedback to the API
+      window.submitFeedback = async (feedbackId, feedbackType) => {
+        const data = feedbackDataStore[feedbackId];
+        if (!data) return;
+        
+        const buttons = document.querySelector(\`.feedback-buttons[data-feedback-id="\${feedbackId}"]\`);
+        if (!buttons) return;
+        
+        try {
+          const response = await fetch("/api/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query_memory_id: data.query_memory_id,
+              user_message: data.user_message,
+              ai_response: data.ai_response,
+              sql_generated: data.sql_generated,
+              feedback_type: feedbackType,
+            }),
+          });
+          
+          if (response.ok) {
+            buttons.innerHTML = \`<span style="color:var(--accent);font-size:12px;">✓ Thanks for your feedback!</span>\`;
+          } else {
+            buttons.innerHTML = \`<span style="color:#ef4444;font-size:12px;">Failed to submit feedback</span>\`;
+          }
+        } catch (err) {
+          console.error("Feedback error:", err);
+          buttons.innerHTML = \`<span style="color:#ef4444;font-size:12px;">Error submitting feedback</span>\`;
+        }
+      };
+
       // Add message with typing effect
-      const addMessageWithTyping = async (label, text, source) => {
+      const addMessageWithTyping = async (label, text, source, feedbackData = null) => {
+        const feedbackId = feedbackData ? "fb-" + Date.now() : null;
+        if (feedbackData && feedbackId) {
+          feedbackDataStore[feedbackId] = feedbackData;
+        }
+        
         const div = document.createElement("div");
         const isAssistant = label.toLowerCase() === "assistant";
         const avatarClass = isAssistant ? "assistant" : "user";
@@ -1388,6 +1469,7 @@
               <div class="message-header"><strong>${label}</strong></div>
               <div class="content"></div>
               ${source ? `<small>${source}</small>` : ""}
+              ${isAssistant && feedbackId ? getFeedbackButtonsHtml(feedbackId) : ""}
             </div>
           </div>
         `;
@@ -1402,7 +1484,12 @@
       };
 
       // Add message with HTML visualization (charts, tables, graphs)
-      const addMessageWithVisualization = async (label, text, source, html) => {
+      const addMessageWithVisualization = async (label, text, source, html, feedbackData = null) => {
+        const feedbackId = feedbackData ? "fb-" + Date.now() : null;
+        if (feedbackData && feedbackId) {
+          feedbackDataStore[feedbackId] = feedbackData;
+        }
+        
         const vizId = "viz-" + Date.now();
         const div = document.createElement("div");
         const isAssistant = label.toLowerCase() === "assistant";
@@ -1423,6 +1510,7 @@
               </div>
               <div class="content" id="${vizId}-text" style="display:none;"></div>
               ${source ? `<small>${source}</small>` : ""}
+              ${isAssistant && feedbackId ? getFeedbackButtonsHtml(feedbackId) : ""}
             </div>
           </div>
         `;
@@ -1586,13 +1674,21 @@
             sourceInfo += (sourceInfo ? "<br>" : "") + `<details><summary>View SQL</summary><pre style="background:#1e293b;color:#e2e8f0;padding:8px;border-radius:4px;overflow-x:auto;margin-top:4px;">${data.sql}</pre></details>`;
           }
           
+          // Store metadata for feedback
+          const feedbackData = {
+            query_memory_id: data.query_memory_id || null,
+            user_message: payload.prompt,
+            ai_response: data.answer,
+            sql_generated: data.sql || null,
+          };
+          
           // Check if we have HTML visualization
           if (data.html) {
             // Add message with visualization
-            await addMessageWithVisualization("Assistant", data.answer, sourceInfo, data.html);
+            await addMessageWithVisualization("Assistant", data.answer, sourceInfo, data.html, feedbackData);
           } else {
             // Use typing effect for assistant responses
-            await addMessageWithTyping("Assistant", data.answer, sourceInfo);
+            await addMessageWithTyping("Assistant", data.answer, sourceInfo, feedbackData);
           }
           statusEl.textContent = "";
           document.getElementById("message").value = "";

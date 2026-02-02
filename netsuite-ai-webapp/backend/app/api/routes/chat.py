@@ -1,6 +1,8 @@
 import json
 import logging
+import time
 import traceback
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from openai import OpenAI, APIError, APIConnectionError, RateLimitError, AuthenticationError
@@ -8,7 +10,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.models.learning import FeedbackType, InteractionType
 from app.db.session import get_db
+from app.llm.learning_service import LearningService
 from app.llm.sql_generator import LlmError, generate_oracle_sql, generate_postgres_sql, _get_completion_kwargs
 from app.netsuite.jdbc import JdbcError, run_query
 
@@ -41,6 +45,24 @@ class ChatResponse(BaseModel):
     source: str
     sql: str | None = None
     html: str | None = None
+    query_memory_id: int | None = None  # For feedback linking
+
+
+class FeedbackRequest(BaseModel):
+    """Request to provide feedback on a response."""
+    query_memory_id: int | None = None
+    user_message: str
+    ai_response: str
+    sql_generated: str | None = None
+    feedback_type: str = Field(..., pattern="^(positive|negative|corrected)$")
+    feedback_comment: str | None = None
+    corrected_sql: str | None = None
+    session_id: str | None = None
+
+
+class FeedbackResponse(BaseModel):
+    success: bool
+    message: str
 
 
 # Fast model for quick tasks like intent classification (reasoning models are too slow)
@@ -357,6 +379,9 @@ def chat(
             detail="To query NetSuite data, please select a JDBC connection first."
         )
 
+    # Initialize learning service
+    learning_service = LearningService(db)
+
     # Determine if we're using PostgreSQL mode
     use_postgres = payload.query_mode == "postgres"
     query_source = "postgres_mirror" if use_postgres else "netsuite_jdbc"
@@ -367,6 +392,23 @@ def chat(
         try:
             logger.info(f"Generating SQL for: {prompt[:50]}... (mode: {payload.query_mode})")
             
+            # Get similar past examples for few-shot learning
+            examples = learning_service.get_similar_examples(prompt, payload.query_mode, limit=3)
+            examples_context = learning_service.format_examples_for_prompt(examples)
+            
+            # Get relevant past errors to warn the AI
+            errors = learning_service.get_relevant_errors(prompt, limit=2)
+            errors_context = learning_service.format_errors_for_prompt(errors)
+            
+            # Combine KB context with learning context
+            kb_context = _format_kb_context(payload.kb_entries)
+            full_context = "\n\n".join(filter(None, [kb_context, examples_context, errors_context]))
+            
+            if examples:
+                logger.info(f"Using {len(examples)} past examples for few-shot learning")
+            if errors:
+                logger.info(f"Warning AI about {len(errors)} past errors")
+            
             if use_postgres:
                 # Use PostgreSQL-specific SQL generator
                 from app.netsuite.postgres_query import get_postgres_schema
@@ -374,14 +416,14 @@ def chat(
                     prompt=prompt,
                     schema=get_postgres_schema(),
                     api_key=openai_api_key,
-                    kb_context=_format_kb_context(payload.kb_entries),
+                    kb_context=full_context,  # Include learning context
                 )
             else:
                 result = generate_oracle_sql(
                     prompt=prompt,
                     schema_hint=payload.scope,
                     api_key=openai_api_key,
-                    kb_context=_format_kb_context(payload.kb_entries),
+                    kb_context=full_context,  # Include learning context
                     db=db,
                     connection_id=payload.connection_id,
                 )
@@ -389,6 +431,16 @@ def chat(
             logger.info(f"Generated SQL: {sql[:100]}...")
         except LlmError as exc:
             logger.error(f"LLM error: {exc}")
+            # Record learning error
+            try:
+                learning_service.record_error(
+                    question=prompt,
+                    bad_sql="(generation failed)",
+                    error_type="llm_error",
+                    error_message=str(exc),
+                )
+            except Exception:
+                pass  # Don't fail the request if error recording fails
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             logger.error(f"Error generating SQL: {exc}\n{traceback.format_exc()}")
@@ -419,9 +471,31 @@ def chat(
             
     except JdbcError as exc:
         logger.error(f"JDBC error: {exc}")
+        # Record SQL execution error for learning
+        if not is_raw_sql:
+            try:
+                learning_service.record_error(
+                    question=prompt,
+                    bad_sql=sql,
+                    error_type="jdbc_error",
+                    error_message=str(exc),
+                )
+            except Exception:
+                pass
         raise HTTPException(status_code=400, detail=f"{exc} | SQL: {sql}") from exc
     except ValueError as exc:
         logger.error(f"Query error: {exc}")
+        # Record SQL validation error for learning
+        if not is_raw_sql:
+            try:
+                learning_service.record_error(
+                    question=prompt,
+                    bad_sql=sql,
+                    error_type="validation_error",
+                    error_message=str(exc),
+                )
+            except Exception:
+                pass
         raise HTTPException(status_code=400, detail=f"{exc} | SQL: {sql}") from exc
     except Exception as exc:
         logger.error(f"Query execution error: {exc}\n{traceback.format_exc()}")
@@ -429,9 +503,25 @@ def chat(
 
     columns = result.get("columns", [])
     rows = result.get("rows", [])
+    
+    # Store successful query for learning (only if AI-generated)
+    query_memory_id = None
+    if not is_raw_sql and rows:
+        try:
+            memory = learning_service.store_successful_query(
+                question=prompt,
+                sql=sql,
+                query_mode=payload.query_mode,
+                row_count=len(rows),
+            )
+            query_memory_id = memory.id
+            logger.info(f"Stored successful query in memory: {query_memory_id}")
+        except Exception as store_exc:
+            logger.warning(f"Failed to store query memory: {store_exc}")
+    
     if not rows:
         answer = "Query executed successfully. No rows returned."
-        return ChatResponse(answer=answer, source=query_source, sql=sql, html=None)
+        return ChatResponse(answer=answer, source=query_source, sql=sql, html=None, query_memory_id=query_memory_id)
     
     # Generate text summary
     header = " | ".join(columns) if columns else "(no columns)"
@@ -457,4 +547,59 @@ def chat(
         # Continue without visualization - not a fatal error
 
     logger.info(f"Chat response: {len(rows)} rows returned ({query_source})")
-    return ChatResponse(answer=answer, source=query_source, sql=sql, html=html_content)
+    return ChatResponse(answer=answer, source=query_source, sql=sql, html=html_content, query_memory_id=query_memory_id)
+
+
+@router.post("/feedback", response_model=FeedbackResponse)
+def submit_feedback(
+    payload: FeedbackRequest,
+    db: Session = Depends(get_db),
+) -> FeedbackResponse:
+    """
+    Submit feedback on an AI response to help it learn.
+    
+    - positive: The response was helpful and correct
+    - negative: The response was wrong or unhelpful
+    - corrected: The user is providing a correction
+    """
+    logger.info(f"Feedback received: {payload.feedback_type}")
+    
+    learning_service = LearningService(db)
+    
+    # Map string to enum
+    feedback_type_map = {
+        "positive": FeedbackType.POSITIVE,
+        "negative": FeedbackType.NEGATIVE,
+        "corrected": FeedbackType.CORRECTED,
+    }
+    feedback_type = feedback_type_map[payload.feedback_type]
+    
+    try:
+        learning_service.record_feedback(
+            interaction_type=InteractionType.DATA_QUERY,
+            user_message=payload.user_message,
+            ai_response=payload.ai_response,
+            sql_generated=payload.sql_generated,
+            feedback_type=feedback_type,
+            feedback_comment=payload.feedback_comment,
+            corrected_sql=payload.corrected_sql,
+            session_id=payload.session_id,
+            query_memory_id=payload.query_memory_id,
+        )
+        
+        return FeedbackResponse(
+            success=True,
+            message=f"Thank you for your {payload.feedback_type} feedback! This helps me learn and improve."
+        )
+    except Exception as exc:
+        logger.error(f"Failed to record feedback: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to record feedback: {exc}") from exc
+
+
+@router.get("/learning/stats")
+def get_learning_stats(
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get statistics about the AI's learning progress."""
+    learning_service = LearningService(db)
+    return learning_service.get_learning_stats()
