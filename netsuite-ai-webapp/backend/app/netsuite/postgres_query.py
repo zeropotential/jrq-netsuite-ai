@@ -99,17 +99,26 @@ def _validate_sql(sql: str) -> None:
     if not sql_upper.startswith("SELECT"):
         raise ValueError("Only SELECT queries are allowed")
     
-    # Block dangerous keywords (comprehensive list)
-    dangerous = [
+    # Block dangerous keywords as whole words (comprehensive list)
+    # Use word boundary regex to avoid false positives like "create_date"
+    dangerous_words = [
         "DROP", "DELETE", "UPDATE", "INSERT", "TRUNCATE", "ALTER", "CREATE", 
         "GRANT", "REVOKE", "EXEC", "EXECUTE", "CALL", "COPY", "LOAD",
+    ]
+    for keyword in dangerous_words:
+        # Match keyword as a whole word (not part of column names like create_date)
+        if re.search(rf'\b{keyword}\b', sql_upper):
+            raise ValueError(f"Dangerous keyword not allowed: {keyword}")
+    
+    # Block dangerous patterns that don't need word boundaries
+    dangerous_patterns = [
         "INTO OUTFILE", "INTO DUMPFILE", "LOAD_FILE",
-        "INFORMATION_SCHEMA", "PG_", "SYS.",  # System tables
+        "INFORMATION_SCHEMA", "PG_CATALOG", "PG_USER", "PG_SHADOW",
         ";",  # No multi-statement
     ]
-    for keyword in dangerous:
-        if keyword in sql_upper:
-            raise ValueError(f"Dangerous keyword not allowed: {keyword}")
+    for pattern in dangerous_patterns:
+        if pattern in sql_upper:
+            raise ValueError(f"Dangerous pattern not allowed: {pattern}")
     
     # Ensure only allowed tables are queried
     # Extract table names from query (basic pattern matching)
