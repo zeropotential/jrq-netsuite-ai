@@ -1267,14 +1267,74 @@
         if (indicator) indicator.remove();
       };
 
+      // Convert pipe-separated text table to HTML table
+      const formatPipeTable = (text) => {
+        const lines = text.trim().split('\n');
+        if (lines.length < 2) return null;
+        
+        // Find header line (first line with pipes)
+        let headerIdx = lines.findIndex(line => line.includes('|'));
+        if (headerIdx === -1) return null;
+        
+        // Check for separator line (dashes)
+        const hasSeparator = lines.some(line => /^[-|+\s]+$/.test(line.trim()));
+        
+        const headers = lines[headerIdx].split('|').map(h => h.trim()).filter(h => h);
+        if (headers.length === 0) return null;
+        
+        // Find data rows (skip header and separator)
+        const dataLines = lines.filter((line, idx) => {
+          if (idx <= headerIdx) return false;
+          if (/^[-|+\s]+$/.test(line.trim())) return false; // Skip separator lines
+          return line.includes('|');
+        });
+        
+        if (dataLines.length === 0) return null;
+        
+        // Build HTML table
+        let html = '<div style="overflow-x: auto; margin: 12px 0;">';
+        html += '<table style="width: 100%; border-collapse: collapse; font-size: 13px; background: var(--card-bg); border-radius: 8px; overflow: hidden;">';
+        
+        // Header
+        html += '<thead><tr style="background: var(--primary); color: white;">';
+        headers.forEach(h => {
+          html += `<th style="padding: 10px 14px; text-align: left; font-weight: 600; white-space: nowrap;">${h}</th>`;
+        });
+        html += '</tr></thead>';
+        
+        // Body
+        html += '<tbody>';
+        dataLines.forEach((line, idx) => {
+          const cells = line.split('|').map(c => c.trim()).filter((c, i) => i < headers.length || c);
+          // Adjust if there are empty strings at start/end from leading/trailing pipes
+          const adjustedCells = cells.length > headers.length ? cells.slice(0, headers.length) : cells;
+          
+          const bgColor = idx % 2 === 0 ? '' : 'background: rgba(0,0,0,0.02);';
+          html += `<tr style="${bgColor}">`;
+          adjustedCells.forEach(cell => {
+            const displayCell = cell === 'None' || cell === 'null' ? '<span style="color: var(--muted);">—</span>' : cell;
+            html += `<td style="padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap;">${displayCell}</td>`;
+          });
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        
+        return html;
+      };
+
       // Typing effect function
       const typeText = async (element, text, speed = 15) => {
         const contentDiv = element.querySelector(".content");
         contentDiv.innerHTML = "";
         
-        // For data tables (contains pipes), show instantly
+        // For data tables (contains pipes), format as HTML table
         if (text.includes(" | ") && text.includes("\n")) {
-          contentDiv.textContent = text;
+          const tableHtml = formatPipeTable(text);
+          if (tableHtml) {
+            contentDiv.innerHTML = tableHtml;
+          } else {
+            contentDiv.textContent = text;
+          }
           return;
         }
         
