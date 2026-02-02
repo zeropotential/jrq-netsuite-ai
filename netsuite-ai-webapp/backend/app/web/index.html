@@ -589,36 +589,28 @@
               <div id="schemaCacheError" style="color: #b91c1c; font-size: 13px; margin-top: 10px; display: none;"></div>
             </div>
 
-            <!-- LLM Schema Info Card -->
-            <div class="kb-card" id="schemaInfoCard">
+            <!-- PostgreSQL Mirror Card -->
+            <div class="kb-card" id="postgresMirrorCard">
               <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-                <div class="status-indicator" id="schemaInfoIndicator" style="width: 12px; height: 12px; border-radius: 50%; background: #6b7280;"></div>
-                <strong style="font-size: 16px;">LLM Schema Knowledge</strong>
-                <span id="schemaInfoBadge" class="status-badge" style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e2e8f0; color: #475569;">Checking...</span>
+                <div class="status-indicator" id="postgresMirrorIndicator" style="width: 12px; height: 12px; border-radius: 50%; background: #6b7280;"></div>
+                <strong style="font-size: 16px;">PostgreSQL Mirror</strong>
+                <span id="postgresMirrorBadge" class="status-badge" style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e2e8f0; color: #475569;">Checking...</span>
               </div>
               <div class="connection-details" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                 <div class="detail-item">
-                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Markdown Schema</span>
-                  <div id="schemaInfoMarkdown" style="font-size: 14px; margin-top: 4px;">—</div>
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Total Rows</span>
+                  <div id="postgresMirrorTotalRows" style="font-size: 14px; margin-top: 4px;">—</div>
                 </div>
                 <div class="detail-item">
-                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Tables Found</span>
-                  <div id="schemaInfoTables" style="font-size: 14px; margin-top: 4px;">—</div>
-                </div>
-                <div class="detail-item">
-                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Markdown Size</span>
-                  <div id="schemaInfoSize" style="font-size: 14px; margin-top: 4px;">—</div>
-                </div>
-                <div class="detail-item">
-                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">CSV Schema</span>
-                  <div id="schemaInfoCsv" style="font-size: 14px; margin-top: 4px;">—</div>
+                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Tables Synced</span>
+                  <div id="postgresMirrorTableCount" style="font-size: 14px; margin-top: 4px;">—</div>
                 </div>
               </div>
-              <div class="detail-item" style="margin-top: 10px;">
-                <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Tables (sample)</span>
-                <div id="schemaInfoTablesList" style="font-size: 12px; margin-top: 4px; color: var(--muted);">—</div>
+              <div class="detail-item" style="margin-top: 12px;">
+                <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Table Details</span>
+                <div id="postgresMirrorTablesList" style="font-size: 12px; margin-top: 8px; display: grid; gap: 6px;">—</div>
               </div>
-              <div id="schemaInfoError" style="color: #b91c1c; font-size: 13px; margin-top: 10px; display: none;"></div>
+              <div id="postgresMirrorError" style="color: #b91c1c; font-size: 13px; margin-top: 10px; display: none;"></div>
             </div>
           </div>
         </section>
@@ -666,14 +658,12 @@
       const schemaCacheExpires = document.getElementById("schemaCacheExpires");
       const schemaCacheTables = document.getElementById("schemaCacheTables");
       const schemaCacheError = document.getElementById("schemaCacheError");
-      const schemaInfoIndicator = document.getElementById("schemaInfoIndicator");
-      const schemaInfoBadge = document.getElementById("schemaInfoBadge");
-      const schemaInfoMarkdown = document.getElementById("schemaInfoMarkdown");
-      const schemaInfoTables = document.getElementById("schemaInfoTables");
-      const schemaInfoSize = document.getElementById("schemaInfoSize");
-      const schemaInfoCsv = document.getElementById("schemaInfoCsv");
-      const schemaInfoTablesList = document.getElementById("schemaInfoTablesList");
-      const schemaInfoError = document.getElementById("schemaInfoError");
+      const postgresMirrorIndicator = document.getElementById("postgresMirrorIndicator");
+      const postgresMirrorBadge = document.getElementById("postgresMirrorBadge");
+      const postgresMirrorTotalRows = document.getElementById("postgresMirrorTotalRows");
+      const postgresMirrorTableCount = document.getElementById("postgresMirrorTableCount");
+      const postgresMirrorTablesList = document.getElementById("postgresMirrorTablesList");
+      const postgresMirrorError = document.getElementById("postgresMirrorError");
 
       // Session-based chat history (clears on page refresh)
       let chatHistory = [];
@@ -806,17 +796,27 @@
         }
       };
 
-      const updateSchemaInfoUI = (loaded) => {
-        if (loaded) {
-          schemaInfoIndicator.style.background = "#22c55e";
-          schemaInfoBadge.style.background = "#dcfce7";
-          schemaInfoBadge.style.color = "#166534";
-          schemaInfoBadge.textContent = "Loaded";
+      const updatePostgresMirrorUI = (status) => {
+        if (status === "connected") {
+          postgresMirrorIndicator.style.background = "#22c55e";
+          postgresMirrorBadge.style.background = "#dcfce7";
+          postgresMirrorBadge.style.color = "#166534";
+          postgresMirrorBadge.textContent = "Synced";
+        } else if (status === "no_data") {
+          postgresMirrorIndicator.style.background = "#f59e0b";
+          postgresMirrorBadge.style.background = "#fef3c7";
+          postgresMirrorBadge.style.color = "#92400e";
+          postgresMirrorBadge.textContent = "No Data";
+        } else if (status === "error") {
+          postgresMirrorIndicator.style.background = "#ef4444";
+          postgresMirrorBadge.style.background = "#fef2f2";
+          postgresMirrorBadge.style.color = "#b91c1c";
+          postgresMirrorBadge.textContent = "Error";
         } else {
-          schemaInfoIndicator.style.background = "#ef4444";
-          schemaInfoBadge.style.background = "#fef2f2";
-          schemaInfoBadge.style.color = "#b91c1c";
-          schemaInfoBadge.textContent = "Missing";
+          postgresMirrorIndicator.style.background = "#6b7280";
+          postgresMirrorBadge.style.background = "#e2e8f0";
+          postgresMirrorBadge.style.color = "#475569";
+          postgresMirrorBadge.textContent = "Checking...";
         }
       };
 
@@ -847,20 +847,18 @@
         document.getElementById("jdbcError").style.display = "none";
         document.getElementById("openaiError").style.display = "none";
         schemaCacheError.style.display = "none";
-        schemaInfoError.style.display = "none";
+        postgresMirrorError.style.display = "none";
         schemaCacheBadge.textContent = "Checking...";
         schemaCacheIndicator.style.background = "#6b7280";
-        schemaInfoBadge.textContent = "Checking...";
-        schemaInfoIndicator.style.background = "#6b7280";
+        postgresMirrorBadge.textContent = "Checking...";
+        postgresMirrorIndicator.style.background = "#6b7280";
         schemaCacheTableCount.textContent = "—";
         schemaCacheAge.textContent = "—";
         schemaCacheExpires.textContent = "—";
         schemaCacheTables.textContent = "—";
-        schemaInfoMarkdown.textContent = "—";
-        schemaInfoTables.textContent = "—";
-        schemaInfoSize.textContent = "—";
-        schemaInfoCsv.textContent = "—";
-        schemaInfoTablesList.textContent = "—";
+        postgresMirrorTotalRows.textContent = "—";
+        postgresMirrorTableCount.textContent = "—";
+        postgresMirrorTablesList.innerHTML = "—";
         connectionsStatus.textContent = "Checking connections...";
         refreshConnectionsBtn.disabled = true;
 
@@ -882,12 +880,9 @@
             ? fetch(`/admin/jdbc-connections/${connectionId}/schema-cache`)
             : Promise.resolve(null);
 
-          const schemaInfoPromise = fetch("/api/schema/info");
-
-          const [healthResponse, cacheResponse, schemaInfoResponse] = await Promise.all([
+          const [healthResponse, cacheResponse] = await Promise.all([
             healthPromise,
             cachePromise,
-            schemaInfoPromise,
           ]);
 
           if (healthResponse) {
@@ -917,9 +912,45 @@
               openaiErrorEl.textContent = data.openai.error;
               openaiErrorEl.style.display = "block";
             }
+
+            // Update PostgreSQL Mirror status
+            if (data.postgres_mirror) {
+              updatePostgresMirrorUI(data.postgres_mirror.status);
+              postgresMirrorTotalRows.textContent = data.postgres_mirror.total_rows?.toLocaleString() || "0";
+              
+              const tables = data.postgres_mirror.tables || {};
+              const tableNames = Object.keys(tables);
+              postgresMirrorTableCount.textContent = tableNames.length;
+              
+              // Build table details HTML
+              if (tableNames.length > 0) {
+                const tableDetailsHtml = tableNames.map(name => {
+                  const info = tables[name];
+                  const statusIcon = info.sync_status === "completed" ? "✓" : 
+                                    info.sync_status === "never_synced" ? "○" : "!";
+                  const statusColor = info.sync_status === "completed" ? "#22c55e" : 
+                                     info.sync_status === "never_synced" ? "#6b7280" : "#f59e0b";
+                  return `<div style="display: flex; justify-content: space-between; padding: 4px 8px; background: var(--card-bg); border-radius: 4px;">
+                    <span><span style="color: ${statusColor}; margin-right: 6px;">${statusIcon}</span>${name}</span>
+                    <span style="color: var(--muted);">${info.row_count?.toLocaleString() || 0} rows</span>
+                  </div>`;
+                }).join("");
+                postgresMirrorTablesList.innerHTML = tableDetailsHtml;
+              } else {
+                postgresMirrorTablesList.innerHTML = "<span style='color: var(--muted);'>No tables synced yet</span>";
+              }
+              
+              if (data.postgres_mirror.error) {
+                postgresMirrorError.textContent = data.postgres_mirror.error;
+                postgresMirrorError.style.display = "block";
+              }
+            } else {
+              updatePostgresMirrorUI("error");
+            }
           } else {
             updateStatusUI(jdbcIndicator, jdbcBadge, "error");
             updateStatusUI(openaiIndicator, openaiBadge, "error");
+            updatePostgresMirrorUI("error");
           }
 
           if (cacheResponse) {
@@ -942,23 +973,6 @@
             schemaCacheError.style.display = "block";
           }
 
-          if (schemaInfoResponse.ok) {
-            const schemaInfo = await schemaInfoResponse.json();
-            updateSchemaInfoUI(schemaInfo.markdown_schema_loaded);
-            schemaInfoMarkdown.textContent = schemaInfo.markdown_schema_loaded ? "Loaded" : "Missing";
-            schemaInfoTables.textContent = schemaInfo.markdown_schema_tables?.length ?? 0;
-            schemaInfoSize.textContent = schemaInfo.markdown_schema_size ? `${schemaInfo.markdown_schema_size} chars` : "—";
-            schemaInfoCsv.textContent = schemaInfo.csv_schema_loaded
-              ? `Loaded (${schemaInfo.csv_schema_tables} tables)`
-              : "Missing";
-            schemaInfoTablesList.textContent = schemaInfo.markdown_schema_tables?.slice(0, 12).join(", ") || "—";
-          } else {
-            updateSchemaInfoUI(false);
-            const errData = await schemaInfoResponse.json().catch(() => ({}));
-            schemaInfoError.textContent = errData.detail || `Schema info failed (${schemaInfoResponse.status})`;
-            schemaInfoError.style.display = "block";
-          }
-
           connectionsStatus.textContent = connectionId
             ? ""
             : "No connection ID configured. Log in to view JDBC cache status.";
@@ -967,7 +981,7 @@
           updateStatusUI(jdbcIndicator, jdbcBadge, "error");
           updateStatusUI(openaiIndicator, openaiBadge, "error");
           updateCacheUI(false);
-          updateSchemaInfoUI(false);
+          updatePostgresMirrorUI("error");
         } finally {
           refreshConnectionsBtn.disabled = false;
         }
