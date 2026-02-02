@@ -104,20 +104,29 @@ def sync_accounts(db: Session, connection_id: str) -> dict[str, Any]:
             records.append(record)
         
         # Build dynamic upsert - only update columns that exist
-        stmt = insert(NSAccount).values(records)
-        update_set = {"synced_at": text("now()")}
-        for col in available_cols:
-            if col != "id":  # Don't update the primary key
-                update_set[col] = getattr(stmt.excluded, col)
-        if "ns_last_modified" in [r.keys() for r in records][0] if records else False:
-            update_set["ns_last_modified"] = stmt.excluded.ns_last_modified
+        # Batch insert for safety (PostgreSQL has 65535 param limit)
+        batch_size = 2000
+        total_synced = 0
         
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["id"],
-            set_=update_set
-        )
-        db.execute(stmt)
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            stmt = insert(NSAccount).values(batch)
+            update_set = {"synced_at": text("now()")}
+            for col in available_cols:
+                if col != "id":  # Don't update the primary key
+                    update_set[col] = getattr(stmt.excluded, col)
+            if "ns_last_modified" in batch[0].keys() if batch else False:
+                update_set["ns_last_modified"] = stmt.excluded.ns_last_modified
+            
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["id"],
+                set_=update_set
+            )
+            db.execute(stmt)
+            total_synced += len(batch)
+            logger.info(f"Synced batch {i // batch_size + 1}: {len(batch)} accounts (total: {total_synced})")
         
+        db.commit()
         _complete_sync_log(db, sync_log, "success", rows_synced=len(records))
         logger.info(f"Synced {len(records)} accounts")
         
@@ -180,34 +189,43 @@ def sync_transactions(
             record = dict(zip(col_lower, row))
             records.append(record)
         
-        # Upsert into PostgreSQL
-        stmt = insert(NSTransaction).values(records)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["id"],
-            set_={
-                "tranid": stmt.excluded.tranid,
-                "type": stmt.excluded.type,
-                "trandate": stmt.excluded.trandate,
-                "status": stmt.excluded.status,
-                "posting": stmt.excluded.posting,
-                "entity": stmt.excluded.entity,
-                "duedate": stmt.excluded.duedate,
-                "closedate": stmt.excluded.closedate,
-                "createddate": stmt.excluded.createddate,
-                "lastmodifieddate": stmt.excluded.lastmodifieddate,
-                "foreigntotal": stmt.excluded.foreigntotal,
-                "foreignamountpaid": stmt.excluded.foreignamountpaid,
-                "foreignamountunpaid": stmt.excluded.foreignamountunpaid,
-                "currency": stmt.excluded.currency,
-                "exchangerate": stmt.excluded.exchangerate,
-                "memo": stmt.excluded.memo,
-                "synced_at": text("now()"),
-            }
-        )
-        db.execute(stmt)
+        # Upsert into PostgreSQL in batches (PostgreSQL has 65535 param limit)
+        # With 17 columns, batch size of 3000 = 51000 params (safe margin)
+        BATCH_SIZE = 3000
+        total_synced = 0
         
+        for i in range(0, len(records), BATCH_SIZE):
+            batch = records[i:i + BATCH_SIZE]
+            stmt = insert(NSTransaction).values(batch)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["id"],
+                set_={
+                    "tranid": stmt.excluded.tranid,
+                    "type": stmt.excluded.type,
+                    "trandate": stmt.excluded.trandate,
+                    "status": stmt.excluded.status,
+                    "posting": stmt.excluded.posting,
+                    "entity": stmt.excluded.entity,
+                    "duedate": stmt.excluded.duedate,
+                    "closedate": stmt.excluded.closedate,
+                    "createddate": stmt.excluded.createddate,
+                    "lastmodifieddate": stmt.excluded.lastmodifieddate,
+                    "foreigntotal": stmt.excluded.foreigntotal,
+                    "foreignamountpaid": stmt.excluded.foreignamountpaid,
+                    "foreignamountunpaid": stmt.excluded.foreignamountunpaid,
+                    "currency": stmt.excluded.currency,
+                    "exchangerate": stmt.excluded.exchangerate,
+                    "memo": stmt.excluded.memo,
+                    "synced_at": text("now()"),
+                }
+            )
+            db.execute(stmt)
+            total_synced += len(batch)
+            logger.info(f"Synced batch {i // BATCH_SIZE + 1}: {len(batch)} transactions (total: {total_synced})")
+        
+        db.commit()
         _complete_sync_log(db, sync_log, "success", rows_synced=len(records))
-        logger.info(f"Synced {len(records)} transactions")
+        logger.info(f"Synced {len(records)} transactions total")
         
         return {"status": "success", "rows_synced": len(records), "table": "transaction"}
         
@@ -312,8 +330,8 @@ def sync_transaction_lines(
         # Get the available columns from first record for dynamic upsert
         record_cols = set(all_records[0].keys()) - {"id"}  # Exclude id from update
         
-        # Upsert into PostgreSQL - batch in chunks
-        insert_batch_size = 5000
+        # Upsert into PostgreSQL - batch in chunks (PostgreSQL has 65535 param limit)
+        insert_batch_size = 2000
         total_synced = 0
         
         for i in range(0, len(all_records), insert_batch_size):
@@ -403,17 +421,26 @@ def sync_employees(db: Session, connection_id: str) -> dict[str, Any]:
         
         record_cols = set(records[0].keys()) - {"id"}
         
-        stmt = insert(NSEmployee).values(records)
-        update_set = {"synced_at": text("now()")}
-        for col in record_cols:
-            update_set[col] = stmt.excluded[col]
+        # Batch insert for safety (PostgreSQL has 65535 param limit)
+        batch_size = 2000
+        total_synced = 0
         
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["id"],
-            set_=update_set
-        )
-        db.execute(stmt)
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            stmt = insert(NSEmployee).values(batch)
+            update_set = {"synced_at": text("now()")}
+            for col in record_cols:
+                update_set[col] = stmt.excluded[col]
+            
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["id"],
+                set_=update_set
+            )
+            db.execute(stmt)
+            total_synced += len(batch)
+            logger.info(f"Synced batch {i // batch_size + 1}: {len(batch)} employees (total: {total_synced})")
         
+        db.commit()
         _complete_sync_log(db, sync_log, "success", rows_synced=len(records))
         logger.info(f"Synced {len(records)} employees")
         
@@ -481,8 +508,8 @@ def sync_customers(db: Session, connection_id: str) -> dict[str, Any]:
         
         record_cols = set(records[0].keys()) - {"id"}
         
-        # Batch insert for large datasets
-        batch_size = 5000
+        # Batch insert for large datasets (PostgreSQL has 65535 param limit)
+        batch_size = 2000
         total_synced = 0
         
         for i in range(0, len(records), batch_size):
