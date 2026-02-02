@@ -588,14 +588,20 @@ def get_sync_status(db: Session, connection_id: str) -> dict[str, Any]:
             "error_message": log.error_message,
         }
     
-    # Get row counts from mirror tables
-    counts = {
-        "account": db.query(func.count(NSAccount.id)).scalar() or 0,
-        "employee": db.query(func.count(NSEmployee.id)).scalar() or 0,
-        "customer": db.query(func.count(NSCustomer.id)).scalar() or 0,
-        "transaction": db.query(func.count(NSTransaction.id)).scalar() or 0,
-        "transactionline": db.query(func.count(NSTransactionLine.id)).scalar() or 0,
-    }
+    # Get row counts from mirror tables (with error handling for missing tables)
+    counts = {}
+    table_models = [
+        ("account", NSAccount),
+        ("employee", NSEmployee),
+        ("customer", NSCustomer),
+        ("transaction", NSTransaction),
+        ("transactionline", NSTransactionLine),
+    ]
+    for table_name, model in table_models:
+        try:
+            counts[table_name] = db.query(func.count(model.id)).scalar() or 0
+        except Exception:
+            counts[table_name] = 0  # Table might not exist yet
     
     return {
         "connection_id": connection_id,
