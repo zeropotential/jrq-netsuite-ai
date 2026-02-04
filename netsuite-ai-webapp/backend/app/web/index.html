@@ -449,6 +449,26 @@
         0%, 50% { opacity: 1; }
         51%, 100% { opacity: 0; }
       }
+      /* Stop typing button */
+      .stop-typing-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        font-size: 11px;
+        background: var(--soft);
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        cursor: pointer;
+        margin-left: 8px;
+        transition: all 0.15s;
+      }
+      .stop-typing-btn:hover {
+        background: #fee2e2;
+        color: #dc2626;
+        border-color: #fca5a5;
+      }
       /* Visualization container */
       .viz-container {
         margin-top: 12px;
@@ -1515,12 +1535,22 @@
         return html;
       };
 
-      // Typing effect function
-      const typeText = async (element, text, speed = 15) => {
+      // Global flag to track if typing should stop
+      let stopTyping = false;
+      let currentTypingResolve = null;
+
+      // Stop typing and show full text
+      window.stopCurrentTyping = () => {
+        stopTyping = true;
+      };
+
+      // Typing effect function (word by word for faster, more natural feel)
+      const typeText = async (element, text, speed = 25) => {
         const contentDiv = element.querySelector(".content");
         contentDiv.innerHTML = "";
+        stopTyping = false;
         
-        // For data tables (contains pipes), format as HTML table
+        // For data tables (contains pipes), format as HTML table immediately
         if (text.includes(" | ") && text.includes("\n")) {
           const tableHtml = formatPipeTable(text);
           if (tableHtml) {
@@ -1531,39 +1561,81 @@
           return;
         }
         
-        // Add cursor
+        // Add cursor and stop button container
         const cursor = document.createElement("span");
         cursor.className = "typing-cursor";
         contentDiv.appendChild(cursor);
         
-        // Type character by character
-        let i = 0;
-        const chars = text.split("");
+        // Add stop button after the content div
+        const stopBtn = document.createElement("button");
+        stopBtn.className = "stop-typing-btn";
+        stopBtn.innerHTML = "⏹ Skip";
+        stopBtn.onclick = () => window.stopCurrentTyping();
+        const messageBody = element.querySelector(".message-body");
+        if (messageBody) {
+          messageBody.insertBefore(stopBtn, messageBody.querySelector("small"));
+        }
+        
+        // Split into words (preserve spaces and newlines)
+        const words = text.split(/(\s+)/);
         
         return new Promise((resolve) => {
-          const typeChar = () => {
-            if (i < chars.length) {
-              // Insert text before cursor
-              const textNode = document.createTextNode(chars[i]);
-              contentDiv.insertBefore(textNode, cursor);
+          currentTypingResolve = resolve;
+          let i = 0;
+          
+          const typeWord = () => {
+            // Check if stopped
+            if (stopTyping) {
+              // Show remaining text immediately
+              cursor.remove();
+              contentDiv.innerHTML = "";
+              // Parse text for line breaks
+              const lines = text.split("\n");
+              lines.forEach((line, idx) => {
+                contentDiv.appendChild(document.createTextNode(line));
+                if (idx < lines.length - 1) {
+                  contentDiv.appendChild(document.createElement("br"));
+                }
+              });
+              stopBtn.remove();
+              resolve();
+              return;
+            }
+            
+            if (i < words.length) {
+              const word = words[i];
               
               // Handle newlines
-              if (chars[i] === "\n") {
-                const br = document.createElement("br");
-                contentDiv.insertBefore(br, cursor);
+              if (word.includes("\n")) {
+                const parts = word.split("\n");
+                parts.forEach((part, idx) => {
+                  if (part) {
+                    const textNode = document.createTextNode(part);
+                    contentDiv.insertBefore(textNode, cursor);
+                  }
+                  if (idx < parts.length - 1) {
+                    const br = document.createElement("br");
+                    contentDiv.insertBefore(br, cursor);
+                  }
+                });
+              } else {
+                const textNode = document.createTextNode(word);
+                contentDiv.insertBefore(textNode, cursor);
               }
               
               i++;
-              // Vary speed slightly for more natural feel
-              const delay = chars[i-1] === "." || chars[i-1] === "!" || chars[i-1] === "?" ? speed * 3 : speed;
-              setTimeout(typeChar, delay);
+              // Faster base speed, slight pause after sentences
+              const lastChar = word.trim().slice(-1);
+              const delay = (lastChar === "." || lastChar === "!" || lastChar === "?") ? speed * 2 : speed;
+              setTimeout(typeWord, delay);
             } else {
-              // Remove cursor when done
+              // Done typing - remove cursor and stop button
               cursor.remove();
+              stopBtn.remove();
               resolve();
             }
           };
-          typeChar();
+          typeWord();
         });
       };
 
