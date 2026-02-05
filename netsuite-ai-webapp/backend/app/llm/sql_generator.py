@@ -416,7 +416,7 @@ KEY COLUMNS IN ns_transaction:
 - trandate: Transaction date
 - status: Transaction status
 - posting: 'T' for posted, 'F' for not posted
-- entity: Customer/vendor ID (foreign key to ns_customer.id)
+- entity: Customer/vendor code (foreign key to ns_customer.entityid, NOT ns_customer.id)
 - foreigntotal: Total amount in transaction currency
 - foreignamountpaid: Amount already paid
 - foreignamountunpaid: Outstanding/remaining amount
@@ -443,7 +443,7 @@ IMPORTANT JOIN SYNTAX:
 COMMON PATTERNS:
 - Customer invoices: 
   FROM ns_transaction T 
-  JOIN ns_customer C ON T.entity = C.id 
+  JOIN ns_customer C ON C.entityid = T.entity 
   WHERE T.type = 'CustInvc'
   
 - Transaction with lines: 
@@ -456,7 +456,7 @@ COMMON PATTERNS:
   SELECT C.id, C.companyname, SUM(TL.amount) as total_sales
   FROM ns_transaction T
   JOIN ns_transactionline TL ON T.id = TL.transaction
-  JOIN ns_customer C ON T.entity = C.id
+  JOIN ns_customer C ON C.entityid = T.entity
   WHERE T.type = 'CustInvc' AND T.posting = 'T'
   GROUP BY C.id, C.companyname
   ORDER BY total_sales DESC
@@ -469,7 +469,7 @@ COMMON PATTERNS:
     COALESCE(SUM(T.foreignamountunpaid), 0) as total_unpaid,
     ROUND((100.0 * COALESCE(SUM(T.foreignamountpaid), 0) / NULLIF(COALESCE(SUM(T.foreigntotal), 0), 0))::NUMERIC, 2) as percent_paid
   FROM ns_transaction T
-  JOIN ns_customer C ON T.entity = C.id
+  JOIN ns_customer C ON C.entityid = T.entity
   WHERE T.type = 'CustInvc' AND T.posting = 'T'
   GROUP BY C.id, C.companyname
   ORDER BY total_invoiced DESC
