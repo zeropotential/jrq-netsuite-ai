@@ -1645,6 +1645,103 @@
         '#ef4444', '#22c55e', '#06b6d4', '#ec4899', '#84cc16'
       ];
 
+      // Map technical column names to business-friendly display names
+      const COLUMN_DISPLAY_NAMES = {
+        // Transaction fields
+        'id': 'ID',
+        'tranid': 'Transaction #',
+        'transaction_id': 'Transaction ID',
+        'type': 'Type',
+        'trandate': 'Transaction Date',
+        'status': 'Status',
+        'posting': 'Posted',
+        'entity': 'Customer ID',
+        'foreigntotal': 'Transaction Amount',
+        'foreignamountpaid': 'Amount Paid',
+        'foreignamountunpaid': 'Amount Unpaid',
+        'total_invoiced': 'Total Invoiced',
+        'total_paid': 'Total Paid',
+        'total_unpaid': 'Total Unpaid',
+        'percent_paid': '% Paid',
+        'memo': 'Memo',
+        'transaction_memo': 'Transaction Memo',
+        'currency': 'Currency',
+        'exchangerate': 'Exchange Rate',
+        'duedate': 'Due Date',
+        'closedate': 'Close Date',
+        'createddate': 'Created Date',
+        'lastmodifieddate': 'Last Modified',
+        
+        // Transaction line fields
+        'line_id': 'Line ID',
+        'linesequencenumber': 'Line #',
+        'item': 'Item',
+        'quantity': 'Quantity',
+        'amount': 'Amount',
+        'line_amount': 'Line Amount',
+        'netamount': 'Net Amount',
+        'line_netamount': 'Line Net Amount',
+        'foreignamount': 'Foreign Amount',
+        'line_foreignamount': 'Line Foreign Amount',
+        'account': 'Account ID',
+        'account_id': 'Account ID',
+        'line_memo': 'Line Memo',
+        
+        // Customer fields
+        'customer_id': 'Customer ID',
+        'customer_entityid': 'Customer Code',
+        'entityid': 'Customer Code',
+        'companyname': 'Company Name',
+        'email': 'Email',
+        'phone': 'Phone',
+        'isinactive': 'Inactive',
+        'category': 'Category',
+        'subsidiary': 'Subsidiary',
+        'salesrep': 'Sales Rep',
+        'balance': 'Balance',
+        'creditlimit': 'Credit Limit',
+        'datecreated': 'Date Created',
+        
+        // Employee fields
+        'firstname': 'First Name',
+        'lastname': 'Last Name',
+        'title': 'Job Title',
+        'supervisor': 'Supervisor',
+        'hiredate': 'Hire Date',
+        'releasedate': 'Release Date',
+        'department': 'Department',
+        'location': 'Location',
+        
+        // Account fields
+        'acctnumber': 'Account #',
+        'account_number': 'Account #',
+        'name': 'Name',
+        'account_name': 'Account Name',
+        'accttype': 'Account Type',
+        
+        // Aggregation/computed fields
+        'total_sales': 'Total Sales',
+        'invoice_count': 'Invoice Count',
+        'count': 'Count',
+        'total': 'Total',
+        'sum': 'Sum',
+        'avg': 'Average',
+        'row_count': 'Row Count',
+      };
+
+      // Get display name for a column
+      const getColumnDisplayName = (colName) => {
+        if (!colName) return '';
+        const key = colName.toLowerCase();
+        if (COLUMN_DISPLAY_NAMES[key]) {
+          return COLUMN_DISPLAY_NAMES[key];
+        }
+        // Fallback: convert snake_case to Title Case
+        return colName
+          .replace(/_/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase());
+      };
+
       // Check if a column name looks like an ID field (not summable)
       const isIdColumn = (colName) => {
         const name = colName.toLowerCase();
@@ -1783,7 +1880,7 @@
           
           html += `
             <div class="stat-card">
-              <div class="stat-label">${col} (Total)</div>
+              <div class="stat-label">${getColumnDisplayName(col)} (Total)</div>
               <div class="stat-value">${formatNumber(sum)}</div>
             </div>
           `;
@@ -1796,7 +1893,7 @@
           const uniqueValues = new Set(rows.map(r => r[colIdx]).filter(v => v != null));
           html += `
             <div class="stat-card">
-              <div class="stat-label">${idCol} (Unique)</div>
+              <div class="stat-label">${getColumnDisplayName(idCol)} (Unique)</div>
               <div class="stat-value">${uniqueValues.size.toLocaleString()}</div>
             </div>
           `;
@@ -1842,8 +1939,8 @@
             pieId: chartId + '-pie',
             labels: sortedLabels,
             data: chartData,
-            label: chartValueCol,
-            labelCol: labelCol,
+            label: getColumnDisplayName(chartValueCol),
+            labelCol: getColumnDisplayName(labelCol),
           });
         }
         
@@ -1853,7 +1950,7 @@
             <div class="table-scroll">
               <table class="dashboard-table">
                 <thead><tr>
-                  ${columns.map(c => `<th>${c}</th>`).join('')}
+                  ${columns.map(c => `<th>${getColumnDisplayName(c)}</th>`).join('')}
                 </tr></thead>
                 <tbody>
         `;
