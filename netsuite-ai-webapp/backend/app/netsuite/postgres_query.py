@@ -241,7 +241,7 @@ Primary key: id
 | trandate | TIMESTAMP | Transaction date |
 | status | VARCHAR | Transaction status |
 | posting | VARCHAR(1) | 'T' for posting, 'F' for non-posting |
-| entity | VARCHAR | Customer/vendor code (FK to ns_customer.entityid, NOT id) |
+| entity | BIGINT | Customer/vendor internal ID (FK to ns_customer.id) |
 | duedate | TIMESTAMP | Due date |
 | closedate | TIMESTAMP | Close date |
 | createddate | TIMESTAMP | Created date |
@@ -326,10 +326,10 @@ Primary key: id
 
 ### JOIN Patterns (IMPORTANT: note the column vs table names)
 ```sql
--- Transaction with customer (NOTE: join on entityid, not id)
+-- Transaction with customer
 SELECT T.id, T.tranid, T.type, C.companyname
 FROM ns_transaction T
-INNER JOIN ns_customer C ON C.entityid = T.entity
+INNER JOIN ns_customer C ON T.entity = C.id
 WHERE T.type = 'CustInvc'
 
 -- Transaction with lines (NOTE: column is 'transaction', table is 'ns_transactionline')
@@ -343,7 +343,7 @@ GROUP BY T.id, T.tranid, T.type, T.trandate
 SELECT C.id, C.companyname, SUM(TL.amount) as total_sales
 FROM ns_transaction T
 INNER JOIN ns_transactionline TL ON T.id = TL.transaction
-INNER JOIN ns_customer C ON C.entityid = T.entity
+INNER JOIN ns_customer C ON T.entity = C.id
 WHERE T.type = 'CustInvc' AND T.posting = 'T'
 GROUP BY C.id, C.companyname
 ORDER BY total_sales DESC
@@ -357,7 +357,7 @@ SELECT C.id, C.companyname,
   COALESCE(SUM(T.foreignamountunpaid), 0) as total_unpaid,
   ROUND((100.0 * COALESCE(SUM(T.foreignamountpaid), 0) / NULLIF(COALESCE(SUM(T.foreigntotal), 0), 0))::NUMERIC, 2) as percent_paid
 FROM ns_transaction T
-INNER JOIN ns_customer C ON C.entityid = T.entity
+INNER JOIN ns_customer C ON T.entity = C.id
 WHERE T.type = 'CustInvc' AND T.posting = 'T'
 GROUP BY C.id, C.companyname
 ORDER BY total_invoiced DESC
@@ -367,7 +367,7 @@ LIMIT 10
 SELECT T.tranid, T.trandate, C.companyname,
   T.foreigntotal, T.foreignamountpaid, T.foreignamountunpaid, T.memo
 FROM ns_transaction T
-INNER JOIN ns_customer C ON C.entityid = T.entity
+INNER JOIN ns_customer C ON T.entity = C.id
 WHERE T.type = 'CustInvc' AND T.foreignamountunpaid > 0
 ORDER BY T.foreignamountunpaid DESC
 ```
