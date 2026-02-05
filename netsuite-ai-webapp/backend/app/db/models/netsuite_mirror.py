@@ -117,7 +117,8 @@ class NSTransactionLine(Base):
 
     # Composite primary key
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)  # Line unique ID
-    transaction: Mapped[int] = mapped_column(BigInteger, ForeignKey("ns_transaction.id"), nullable=False)
+    # Note: No FK constraint - we sync from external system, can't guarantee referential integrity
+    transaction: Mapped[int] = mapped_column(BigInteger, nullable=False)
     
     # Line identification
     linesequencenumber: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
