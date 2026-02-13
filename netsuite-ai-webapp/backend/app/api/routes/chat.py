@@ -46,6 +46,7 @@ class ChatResponse(BaseModel):
     sql: str | None = None
     html: str | None = None  # Deprecated - kept for backwards compatibility
     query_memory_id: int | None = None  # For feedback linking
+    display_mode: str | None = None  # 'dashboard' or 'table'
     # New fields for client-side dashboard rendering
     columns: list[str] | None = None
     rows: list[list] | None = None
@@ -137,6 +138,51 @@ def _classify_intent(client: OpenAI, message: str) -> str:
     except Exception as e:
         logger.error(f"LLM classification failed: {e}, defaulting to general_question")
         return "general_question"
+
+
+def _classify_display_mode(client: OpenAI, message: str) -> str:
+    """Classify whether response should render as dashboard or table-only."""
+    try:
+        response = client.chat.completions.create(
+            model=FAST_MODEL,
+            timeout=20.0,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a UI rendering classifier for a NetSuite AI Assistant. "
+                        "Classify the user's data request into exactly one mode: 'table' or 'dashboard'.\n\n"
+                        "Use 'table' when the user asks for specific details/contact/profile-style information "
+                        "about a specific employee/customer/account/transaction (record-level lookup).\n"
+                        "Examples (table):\n"
+                        "- I want to know more information about this employee\n"
+                        "- Can you provide the contact details of this customer\n"
+                        "- Show this customer's email and phone\n"
+                        "- Give me details for employee John Doe\n\n"
+                        "Use 'dashboard' for summaries, trends, totals, top-N, comparisons, analytics, "
+                        "or explicit dashboard/chart/report requests.\n"
+                        "Examples (dashboard):\n"
+                        "- Show sales summary by month\n"
+                        "- Top 10 customers by revenue\n"
+                        "- Build me a dashboard of unpaid invoices\n"
+                        "- Count employees by department\n\n"
+                        "Reply with ONLY: table OR dashboard"
+                    ),
+                },
+                {"role": "user", "content": message},
+            ],
+        )
+
+        raw_mode = (response.choices[0].message.content or "").strip().lower()
+        if "table" in raw_mode:
+            return "table"
+        if "dashboard" in raw_mode:
+            return "dashboard"
+        logger.warning(f"Could not parse display mode from '{raw_mode}', defaulting to dashboard")
+        return "dashboard"
+    except Exception as exc:
+        logger.warning(f"Display mode classification failed: {exc}; defaulting to dashboard")
+        return "dashboard"
 
 
 def _format_kb_context(kb_entries: list[KnowledgeBaseEntry] | None) -> str:
@@ -326,6 +372,7 @@ def chat(
     # Check if user provided raw SQL
     normalized = prompt.lower().lstrip()
     is_raw_sql = normalized.startswith("select") or normalized.startswith("with")
+    display_mode = "dashboard"
 
     # If not raw SQL, classify the intent
     if not is_raw_sql:
@@ -381,6 +428,9 @@ def chat(
             except Exception as exc:
                 logger.error(f"Error in netsuite help: {exc}\n{traceback.format_exc()}")
                 raise HTTPException(status_code=500, detail=f"Error generating response: {type(exc).__name__}: {exc}") from exc
+
+        # For data queries, decide how results should be presented.
+        display_mode = _classify_display_mode(client, prompt)
 
     # For data queries, require connection_id (unless using postgres mode)
     if not payload.connection_id and payload.query_mode == "netsuite":
@@ -566,7 +616,14 @@ def chat(
     
     if not rows:
         answer = "Query executed successfully. No rows returned."
-        return ChatResponse(answer=answer, source=query_source, sql=sql, html=None, query_memory_id=query_memory_id)
+        return ChatResponse(
+            answer=answer,
+            source=query_source,
+            sql=sql,
+            html=None,
+            query_memory_id=query_memory_id,
+            display_mode=display_mode,
+        )
     
     # Generate text summary (fallback for non-JS clients)
     header = " | ".join(columns) if columns else "(no columns)"
@@ -597,6 +654,7 @@ def chat(
         sql=sql,
         html=None,  # No longer using LLM-generated HTML
         query_memory_id=query_memory_id,
+        display_mode=display_mode,
         columns=columns,
         rows=serializable_rows,
     )

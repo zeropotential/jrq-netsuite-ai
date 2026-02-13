@@ -2201,6 +2201,72 @@
         return div;
       };
 
+      // Add message with table only (no charts/stats dashboard)
+      const addMessageWithTable = async (label, text, source, columns, rows, feedbackData = null) => {
+        const feedbackId = feedbackData ? "fb-" + Date.now() : null;
+        if (feedbackData && feedbackId) {
+          feedbackDataStore[feedbackId] = feedbackData;
+        }
+
+        const tableId = "table-" + Date.now();
+        const div = document.createElement("div");
+        const isAssistant = label.toLowerCase() === "assistant";
+        const avatarClass = isAssistant ? "assistant" : "user";
+        const avatarText = isAssistant ? "AI" : "U";
+        const collapseBtn = isAssistant ? `<button class="message-collapse-btn" onclick="toggleMessageCollapse(this)"><span class="chevron">▼</span> Collapse</button>` : "";
+        const preview = `Table: ${rows.length} rows, ${columns.length} columns`;
+
+        const types = detectColumnTypes(columns, rows);
+        let tableHtml = `
+          <div class="dashboard-table-container" id="${tableId}">
+            <div class="table-scroll">
+              <table class="dashboard-table">
+                <thead><tr>
+                  ${columns.map(c => `<th>${getColumnDisplayName(c)}</th>`).join('')}
+                </tr></thead>
+                <tbody>
+        `;
+
+        rows.slice(0, 200).forEach(row => {
+          tableHtml += '<tr>';
+          row.forEach((cell, idx) => {
+            const col = columns[idx];
+            let displayVal = cell;
+            if (types[col] === 'number' && cell != null) {
+              displayVal = formatNumber(cell);
+            } else if (cell == null) {
+              displayVal = '-';
+            }
+            tableHtml += `<td>${displayVal}</td>`;
+          });
+          tableHtml += '</tr>';
+        });
+
+        if (rows.length > 200) {
+          tableHtml += `<tr><td colspan="${columns.length}" style="text-align:center;color:var(--muted);font-style:italic;">... and ${rows.length - 200} more rows</td></tr>`;
+        }
+
+        tableHtml += '</tbody></table></div></div>';
+
+        div.className = "message";
+        div.innerHTML = `
+          <div class="message-row">
+            <div class="avatar ${avatarClass}">${avatarText}</div>
+            <div style="flex:1;min-width:0;">
+              <div class="message-header"><strong>${label}</strong>${collapseBtn}</div>
+              <div class="message-body">
+                <div class="content">${tableHtml}</div>
+                ${source ? `<small>${source}</small>` : ""}
+                ${isAssistant && feedbackId ? getFeedbackButtonsHtml(feedbackId) : ""}
+              </div>
+              ${isAssistant ? `<div class="message-preview">${preview}</div>` : ""}
+            </div>
+          </div>
+        `;
+        chatEl.prepend(div);
+        return div;
+      };
+
       // Add message with HTML visualization (charts, tables, graphs) - LEGACY for old responses
       const addMessageWithVisualization = async (label, text, source, html, feedbackData = null) => {
         const feedbackId = feedbackData ? "fb-" + Date.now() : null;
@@ -2407,8 +2473,13 @@
           
           // Check if we have query results (columns and rows) for dashboard
           if (data.columns && data.rows && data.rows.length > 0) {
-            // Render client-side dashboard from query results
-            await addMessageWithDashboard("Assistant", data.answer, sourceInfo, data.columns, data.rows, feedbackData);
+            const displayMode = (data.display_mode || "dashboard").toLowerCase();
+            if (displayMode === "table") {
+              await addMessageWithTable("Assistant", data.answer, sourceInfo, data.columns, data.rows, feedbackData);
+            } else {
+              // Render client-side dashboard from query results
+              await addMessageWithDashboard("Assistant", data.answer, sourceInfo, data.columns, data.rows, feedbackData);
+            }
           } else if (data.html) {
             // Legacy: Add message with LLM-generated visualization
             await addMessageWithVisualization("Assistant", data.answer, sourceInfo, data.html, feedbackData);
