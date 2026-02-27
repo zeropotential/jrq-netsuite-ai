@@ -45,7 +45,10 @@ services:
       NETSUITE_JDBC_ROW_LIMIT: ${NETSUITE_JDBC_ROW_LIMIT}
       LLM_PROVIDER: ${LLM_PROVIDER}
       OPENAI_MODEL: ${OPENAI_MODEL}
-      # Database security settings
+      # Security settings
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-60}
       DB_SSL_MODE: ${DB_SSL_MODE:-disable}
     depends_on:
       postgres:

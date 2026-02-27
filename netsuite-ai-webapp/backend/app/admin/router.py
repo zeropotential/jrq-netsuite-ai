@@ -1,7 +1,9 @@
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -16,6 +18,8 @@ from app.netsuite.schema_discovery import (
     get_cached_schema,
     schema_to_llm_context,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -40,18 +44,53 @@ class JdbcConnectionOut(BaseModel):
     username: str
 
 
-@router.post("/jdbc-connections", response_model=JdbcConnectionOut)
+@router.get("/jdbc-connections", response_model=list[JdbcConnectionOut])
+def list_jdbc_connections(db: Session = Depends(get_db)) -> list[JdbcConnectionOut]:
+    """List all JDBC connections (without passwords)."""
+    connections = db.query(NetSuiteJdbcConnection).order_by(
+        NetSuiteJdbcConnection.created_at.desc()
+    ).all()
+    return [
+        JdbcConnectionOut(
+            id=str(c.id),
+            name=c.name,
+            account_id=c.account_id,
+            role_id=c.role_id,
+            host=c.host,
+            port=c.port,
+            username=c.username,
+        )
+        for c in connections
+    ]
+
+
+@router.post("/jdbc-connections", response_model=JdbcConnectionOut, status_code=201)
 def create_jdbc_connection(payload: JdbcConnectionCreate, db: Session = Depends(get_db)) -> JdbcConnectionOut:
     if not settings.app_kek_b64:
         raise HTTPException(status_code=400, detail="APP_KEK_B64 is not configured")
 
-    aad = f"netsuite-jdbc:{payload.name}".encode()
-    encrypted = encrypt_secret(
-        plaintext=payload.password.encode(),
-        kek_b64=settings.app_kek_b64,
-        key_id=settings.app_key_id,
-        aad=aad,
-    )
+    # Check for duplicate name
+    existing = db.query(NetSuiteJdbcConnection).filter(
+        NetSuiteJdbcConnection.name == payload.name
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A connection named '{payload.name}' already exists (id: {existing.id}). "
+                   f"Use PUT /admin/jdbc-connections/{existing.id} to update it.",
+        )
+
+    try:
+        aad = f"netsuite-jdbc:{payload.name}".encode()
+        encrypted = encrypt_secret(
+            plaintext=payload.password.encode(),
+            kek_b64=settings.app_kek_b64,
+            key_id=settings.app_key_id,
+            aad=aad,
+        )
+    except Exception as exc:
+        logger.error("Failed to encrypt JDBC password: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to encrypt password. Check APP_KEK_B64 configuration.") from exc
 
     secret = Secret(
         purpose="netsuite_jdbc_password",
@@ -75,7 +114,15 @@ def create_jdbc_connection(payload: JdbcConnectionCreate, db: Session = Depends(
         password_secret_id=secret.id,
     )
     db.add(conn)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        logger.error("DB integrity error creating JDBC connection: %s", exc)
+        raise HTTPException(
+            status_code=409,
+            detail=f"A connection named '{payload.name}' already exists.",
+        ) from exc
     db.refresh(conn)
 
     return JdbcConnectionOut(
@@ -87,6 +134,126 @@ def create_jdbc_connection(payload: JdbcConnectionCreate, db: Session = Depends(
         port=conn.port,
         username=conn.username,
     )
+
+
+class JdbcConnectionUpdate(BaseModel):
+    """All fields optional — only provided fields are updated."""
+    name: str | None = Field(None, min_length=3, max_length=128)
+    account_id: str | None = Field(None, min_length=2, max_length=64)
+    role_id: str | None = Field(None, min_length=1, max_length=32)
+    host: str | None = Field(None, min_length=3, max_length=255)
+    port: int | None = Field(None, ge=1, le=65535)
+    username: str | None = Field(None, min_length=3, max_length=255)
+    password: str | None = Field(None, min_length=1, max_length=255)
+
+
+@router.put("/jdbc-connections/{connection_id}", response_model=JdbcConnectionOut)
+def update_jdbc_connection(
+    connection_id: str,
+    payload: JdbcConnectionUpdate,
+    db: Session = Depends(get_db),
+) -> JdbcConnectionOut:
+    """Update an existing JDBC connection. Only provided fields are changed."""
+    import uuid as _uuid
+    try:
+        conn_uuid = _uuid.UUID(connection_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid connection_id")
+
+    conn = db.get(NetSuiteJdbcConnection, conn_uuid)
+    if not conn:
+        raise HTTPException(status_code=404, detail="JDBC connection not found")
+
+    # Update simple fields
+    if payload.name is not None:
+        conn.name = payload.name
+    if payload.account_id is not None:
+        conn.account_id = payload.account_id
+    if payload.role_id is not None:
+        conn.role_id = payload.role_id
+    if payload.host is not None:
+        conn.host = payload.host
+    if payload.port is not None:
+        conn.port = payload.port
+    if payload.username is not None:
+        conn.username = payload.username
+
+    # Update password (re-encrypt)
+    if payload.password is not None:
+        if not settings.app_kek_b64:
+            raise HTTPException(status_code=400, detail="APP_KEK_B64 is not configured")
+
+        conn_name = payload.name or conn.name
+        try:
+            aad = f"netsuite-jdbc:{conn_name}".encode()
+            encrypted = encrypt_secret(
+                plaintext=payload.password.encode(),
+                kek_b64=settings.app_kek_b64,
+                key_id=settings.app_key_id,
+                aad=aad,
+            )
+        except Exception as exc:
+            logger.error("Failed to encrypt JDBC password: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to encrypt password.") from exc
+
+        # Delete old secret, create new one
+        old_secret = db.get(Secret, conn.password_secret_id)
+        new_secret = Secret(
+            purpose="netsuite_jdbc_password",
+            key_id=encrypted.key_id,
+            aad=encrypted.aad,
+            wrapped_dek=encrypted.wrapped_dek,
+            wrapped_dek_nonce=encrypted.wrapped_dek_nonce,
+            data_nonce=encrypted.data_nonce,
+            ciphertext=encrypted.ciphertext,
+        )
+        db.add(new_secret)
+        db.flush()
+        conn.password_secret_id = new_secret.id
+        if old_secret:
+            db.delete(old_secret)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"A connection named '{payload.name}' already exists.",
+        ) from exc
+    db.refresh(conn)
+
+    return JdbcConnectionOut(
+        id=str(conn.id),
+        name=conn.name,
+        account_id=conn.account_id,
+        role_id=conn.role_id,
+        host=conn.host,
+        port=conn.port,
+        username=conn.username,
+    )
+
+
+@router.delete("/jdbc-connections/{connection_id}")
+def delete_jdbc_connection(connection_id: str, db: Session = Depends(get_db)) -> dict:
+    """Delete a JDBC connection and its encrypted password secret."""
+    import uuid as _uuid
+    try:
+        conn_uuid = _uuid.UUID(connection_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid connection_id")
+
+    conn = db.get(NetSuiteJdbcConnection, conn_uuid)
+    if not conn:
+        raise HTTPException(status_code=404, detail="JDBC connection not found")
+
+    # Delete the associated password secret
+    secret = db.get(Secret, conn.password_secret_id)
+    db.delete(conn)
+    if secret:
+        db.delete(secret)
+    db.commit()
+    return {"status": "deleted", "id": connection_id}
 
 
 @router.post("/jdbc-connections/{connection_id}/test")
