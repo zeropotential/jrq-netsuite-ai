@@ -353,7 +353,24 @@ def generate_oracle_sql(
 
     logger.info(f"SQL generation response: finish_reason={response.choices[0].finish_reason}")
     
-    content = (response.choices[0].message.content or "").strip()
+    message = response.choices[0].message
+    
+    # Check for refusal (GPT-5 / o-series models may refuse via a separate field)
+    if hasattr(message, 'refusal') and message.refusal:
+        logger.warning(f"LLM refused to generate SQL: {message.refusal}")
+        raise LlmError(f"The AI model declined to generate SQL: {message.refusal}")
+    
+    content = (message.content or "").strip()
+    
+    # Log raw content for debugging empty responses
+    if not content:
+        logger.error(
+            f"LLM returned empty content. Model: {settings.openai_model}, "
+            f"finish_reason: {response.choices[0].finish_reason}, "
+            f"prompt length: {len(user)}, "
+            f"message keys: {[k for k in dir(message) if not k.startswith('_')]}, "
+            f"usage: {response.usage}"
+        )
     
     # Clean up markdown code fences if present
     if content.startswith("```sql"):
@@ -365,10 +382,6 @@ def generate_oracle_sql(
     content = content.strip()
     
     if not content:
-        # Log more details for debugging
-        logger.error(f"LLM returned empty response. Model: {settings.openai_model}, "
-                    f"finish_reason: {response.choices[0].finish_reason}, "
-                    f"prompt length: {len(user)}")
         raise LlmError("LLM returned empty response - the model may not have generated SQL for this query")
 
     return SqlGenerationResult(sql=content, model=settings.openai_model)
@@ -555,7 +568,23 @@ Generate a PostgreSQL query. Return ONLY the SQL, no explanation."""
 
     logger.info(f"PostgreSQL SQL generation response: finish_reason={response.choices[0].finish_reason}")
     
-    content = (response.choices[0].message.content or "").strip()
+    message = response.choices[0].message
+    
+    # Check for refusal (GPT-5 / o-series models may refuse via a separate field)
+    if hasattr(message, 'refusal') and message.refusal:
+        logger.warning(f"LLM refused to generate PostgreSQL SQL: {message.refusal}")
+        raise LlmError(f"The AI model declined to generate SQL: {message.refusal}")
+    
+    content = (message.content or "").strip()
+    
+    # Log raw content for debugging empty responses
+    if not content:
+        logger.error(
+            f"LLM returned empty content for PostgreSQL query. Model: {settings.openai_model}, "
+            f"finish_reason: {response.choices[0].finish_reason}, "
+            f"message keys: {[k for k in dir(message) if not k.startswith('_')]}, "
+            f"usage: {response.usage}"
+        )
     
     # Clean up markdown code fences if present
     if content.startswith("```sql"):
@@ -567,8 +596,6 @@ Generate a PostgreSQL query. Return ONLY the SQL, no explanation."""
     content = content.strip()
     
     if not content:
-        logger.error(f"LLM returned empty response for PostgreSQL query. Model: {settings.openai_model}, "
-                    f"finish_reason: {response.choices[0].finish_reason}")
         raise LlmError("LLM returned empty response - the model may not have generated SQL for this query")
 
     return SqlGenerationResult(sql=content, model=settings.openai_model)
