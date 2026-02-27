@@ -837,6 +837,14 @@
     </div>
 
     <script>
+      // --- Security: HTML escape utility to prevent XSS ---
+      const _escapeEl = document.createElement("div");
+      const escapeHtml = (str) => {
+        if (str == null) return "";
+        _escapeEl.textContent = String(str);
+        return _escapeEl.innerHTML;
+      };
+
       const sendBtn = document.getElementById("sendBtn");
       const statusEl = document.getElementById("status");
       const chatEl = document.getElementById("chat");
@@ -933,7 +941,7 @@
         kbItems.forEach((item) => {
           const div = document.createElement("div");
           div.className = "kb-item";
-          div.innerHTML = `<strong>${item.title}</strong><div>${item.content}</div><small>${new Date(item.createdAt).toLocaleString()}</small>`;
+          div.innerHTML = `<strong>${escapeHtml(item.title)}</strong><div>${escapeHtml(item.content)}</div><small>${escapeHtml(new Date(item.createdAt).toLocaleString())}</small>`;
           kbList.appendChild(div);
         });
       };
@@ -967,9 +975,9 @@
             header.style.cssText = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;";
             header.innerHTML = `
               <div>
-                <strong style="font-size: 16px; color: var(--text);">${table.name}</strong>
+                <strong style="font-size: 16px; color: var(--text);">${escapeHtml(table.name)}</strong>
                 <span style="margin-left: 12px; padding: 4px 10px; background: ${hasError ? '#fef2f2' : (table.row_count > 0 ? '#dcfce7' : '#fef3c7')}; color: ${hasError ? '#b91c1c' : (table.row_count > 0 ? '#166534' : '#92400e')}; border-radius: 999px; font-size: 12px; font-weight: 600;">
-                  ${hasError ? 'Table Missing' : table.row_count.toLocaleString() + ' rows'}
+                  ${hasError ? 'Table Missing' : escapeHtml(table.row_count.toLocaleString()) + ' rows'}
                 </span>
               </div>
             `;
@@ -979,7 +987,7 @@
             if (table.error) {
               const errorDiv = document.createElement("div");
               errorDiv.style.cssText = "padding: 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #b91c1c; font-size: 13px; margin-bottom: 16px;";
-              errorDiv.innerHTML = `<strong>Error:</strong> ${table.error}<br><br><em>Run migrations to create this table: <code>alembic upgrade head</code></em>`;
+              errorDiv.innerHTML = `<strong>Error:</strong> ${escapeHtml(table.error)}<br><br><em>Run migrations to create this table: <code>alembic upgrade head</code></em>`;
               tableCard.appendChild(errorDiv);
               explorerContent.appendChild(tableCard);
               return;
@@ -995,8 +1003,8 @@
               <div style="display: flex; flex-wrap: wrap; gap: 6px;">
                 ${table.columns.map(col => `
                   <span style="padding: 4px 8px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; font-size: 12px;">
-                    <span style="color: var(--text);">${col.name}</span>
-                    <span style="color: var(--muted); margin-left: 4px;">${col.type.split('(')[0]}</span>
+                    <span style="color: var(--text);">${escapeHtml(col.name)}</span>
+                    <span style="color: var(--muted); margin-left: 4px;">${escapeHtml(col.type.split('(')[0])}</span>
                   </span>
                 `).join('')}
               </div>
@@ -1025,7 +1033,7 @@
                 <tr style="background: var(--card-bg);">
                   ${table.columns.slice(0, 8).map(col => `
                     <th style="padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 600; white-space: nowrap;">
-                      ${col.name}
+                      ${escapeHtml(col.name)}
                     </th>
                   `).join('')}
                   ${table.columns.length > 8 ? '<th style="padding: 8px 12px; color: var(--muted);">...</th>' : ''}
@@ -1041,7 +1049,7 @@
                 tr.innerHTML = table.columns.slice(0, 8).map(col => {
                   const val = row[col.name];
                   const displayVal = val === null ? '<span style="color: var(--muted);">null</span>' : 
-                                    String(val).length > 30 ? String(val).substring(0, 30) + '...' : val;
+                                    escapeHtml(String(val).length > 30 ? String(val).substring(0, 30) + '...' : String(val));
                   return `<td style="padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap;">${displayVal}</td>`;
                 }).join('') + (table.columns.length > 8 ? '<td style="padding: 8px 12px; color: var(--muted);">...</td>' : '');
                 tbody.appendChild(tr);
@@ -1307,8 +1315,8 @@
                   const statusColor = info.sync_status === "completed" ? "#22c55e" : 
                                      info.sync_status === "never_synced" ? "#6b7280" : "#f59e0b";
                   return `<div style="display: flex; justify-content: space-between; padding: 4px 8px; background: var(--card-bg); border-radius: 4px;">
-                    <span><span style="color: ${statusColor}; margin-right: 6px;">${statusIcon}</span>${name}</span>
-                    <span style="color: var(--muted);">${info.row_count?.toLocaleString() || 0} rows</span>
+                    <span><span style="color: ${statusColor}; margin-right: 6px;">${statusIcon}</span>${escapeHtml(name)}</span>
+                    <span style="color: var(--muted);">${escapeHtml(info.row_count?.toLocaleString() || '0')} rows</span>
                   </div>`;
                 }).join("");
                 postgresMirrorTablesList.innerHTML = tableDetailsHtml;
@@ -1523,7 +1531,7 @@
         // Header
         html += '<thead><tr style="background: var(--primary); color: white;">';
         headers.forEach(h => {
-          html += `<th style="padding: 10px 14px; text-align: left; font-weight: 600; white-space: nowrap;">${h}</th>`;
+          html += `<th style="padding: 10px 14px; text-align: left; font-weight: 600; white-space: nowrap;">${escapeHtml(h)}</th>`;
         });
         html += '</tr></thead>';
         
@@ -1537,7 +1545,7 @@
           const bgColor = idx % 2 === 0 ? '' : 'background: rgba(0,0,0,0.02);';
           html += `<tr style="${bgColor}">`;
           adjustedCells.forEach(cell => {
-            const displayCell = cell === 'None' || cell === 'null' ? '<span style="color: var(--muted);">—</span>' : cell;
+            const displayCell = cell === 'None' || cell === 'null' ? '<span style="color: var(--muted);">—</span>' : escapeHtml(cell);
             html += `<td style="padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap;">${displayCell}</td>`;
           });
           html += '</tr>';
@@ -1892,8 +1900,8 @@
           
           html += `
             <div class="stat-card">
-              <div class="stat-label">${getColumnDisplayName(col)} (Total)</div>
-              <div class="stat-value">${formatNumber(sum)}</div>
+              <div class="stat-label">${escapeHtml(getColumnDisplayName(col))} (Total)</div>
+              <div class="stat-value">${escapeHtml(formatNumber(sum))}</div>
             </div>
           `;
         });
@@ -1905,7 +1913,7 @@
           const uniqueValues = new Set(rows.map(r => r[colIdx]).filter(v => v != null));
           html += `
             <div class="stat-card">
-              <div class="stat-label">${getColumnDisplayName(idCol)} (Unique)</div>
+              <div class="stat-label">${escapeHtml(getColumnDisplayName(idCol))} (Unique)</div>
               <div class="stat-value">${uniqueValues.size.toLocaleString()}</div>
             </div>
           `;
@@ -1962,7 +1970,7 @@
             <div class="table-scroll">
               <table class="dashboard-table">
                 <thead><tr>
-                  ${columns.map(c => `<th>${getColumnDisplayName(c)}</th>`).join('')}
+                  ${columns.map(c => `<th>${escapeHtml(getColumnDisplayName(c))}</th>`).join('')}
                 </tr></thead>
                 <tbody>
         `;
@@ -1977,7 +1985,7 @@
             } else if (cell == null) {
               displayVal = '-';
             }
-            html += `<td>${displayVal}</td>`;
+            html += `<td>${escapeHtml(String(displayVal))}</td>`;
           });
           html += '</tr>';
         });
@@ -2121,13 +2129,13 @@
         const avatarClass = isAssistant ? "assistant" : "user";
         const avatarText = isAssistant ? "AI" : "U";
         const collapseBtn = isAssistant ? `<button class="message-collapse-btn" onclick="toggleMessageCollapse(this)"><span class="chevron">▼</span> Collapse</button>` : "";
-        const preview = text.substring(0, 100).replace(/\n/g, ' ') + (text.length > 100 ? '...' : '');
+        const preview = escapeHtml(text.substring(0, 100).replace(/\n/g, ' ') + (text.length > 100 ? '...' : ''));
         div.className = "message";
         div.innerHTML = `
           <div class="message-row">
             <div class="avatar ${avatarClass}">${avatarText}</div>
             <div style="flex:1;min-width:0;">
-              <div class="message-header"><strong>${label}</strong>${collapseBtn}</div>
+              <div class="message-header"><strong>${escapeHtml(label)}</strong>${collapseBtn}</div>
               <div class="message-body">
                 <div class="content"></div>
                 ${source ? `<small>${source}</small>` : ""}
@@ -2169,7 +2177,7 @@
           <div class="message-row">
             <div class="avatar ${avatarClass}">${avatarText}</div>
             <div style="flex:1;min-width:0;">
-              <div class="message-header"><strong>${label}</strong>${collapseBtn}</div>
+              <div class="message-header"><strong>${escapeHtml(label)}</strong>${collapseBtn}</div>
               <div class="message-body">
                 <div class="viz-toggle">
                   <button class="active" data-view="viz">Dashboard</button>
@@ -2234,7 +2242,7 @@
             <div class="table-scroll">
               <table class="dashboard-table">
                 <thead><tr>
-                  ${columns.map(c => `<th>${getColumnDisplayName(c)}</th>`).join('')}
+                  ${columns.map(c => `<th>${escapeHtml(getColumnDisplayName(c))}</th>`).join('')}
                 </tr></thead>
                 <tbody>
         `;
@@ -2249,7 +2257,7 @@
             } else if (cell == null) {
               displayVal = '-';
             }
-            tableHtml += `<td>${displayVal}</td>`;
+            tableHtml += `<td>${escapeHtml(String(displayVal))}</td>`;
           });
           tableHtml += '</tr>';
         });
@@ -2265,7 +2273,7 @@
           <div class="message-row">
             <div class="avatar ${avatarClass}">${avatarText}</div>
             <div style="flex:1;min-width:0;">
-              <div class="message-header"><strong>${label}</strong>${collapseBtn}</div>
+              <div class="message-header"><strong>${escapeHtml(label)}</strong>${collapseBtn}</div>
               <div class="message-body">
                 <div class="content">${tableHtml}</div>
                 ${source ? `<small>${source}</small>` : ""}
@@ -2298,14 +2306,14 @@
           <div class="message-row">
             <div class="avatar ${avatarClass}">${avatarText}</div>
             <div style="flex:1;min-width:0;">
-              <div class="message-header"><strong>${label}</strong>${collapseBtn}</div>
+              <div class="message-header"><strong>${escapeHtml(label)}</strong>${collapseBtn}</div>
               <div class="message-body">
                 <div class="viz-toggle">
                   <button class="active" data-view="viz">Dashboard</button>
                   <button data-view="text">Raw Data</button>
                 </div>
                 <div class="viz-container" id="${vizId}-viz">
-                  <iframe sandbox="allow-scripts" srcdoc=""></iframe>
+                  <iframe sandbox="" srcdoc=""></iframe>
                 </div>
                 <div class="content" id="${vizId}-text" style="display:none;"></div>
                 ${source ? `<small>${source}</small>` : ""}

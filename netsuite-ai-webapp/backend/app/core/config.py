@@ -28,5 +28,15 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-5-mini"
 
+    # --- Security settings ---
+    # Admin API key (required for /admin/* endpoints)
+    admin_api_key: str = ""
+    # CORS allowed origins (comma-separated, e.g. "https://example.com,https://app.example.com")
+    cors_origins: str = ""
+    # Rate limiting (requests per minute per IP)
+    rate_limit_rpm: int = 60
+    # Max request body size in bytes (default 1 MB)
+    max_request_body_bytes: int = 1_048_576
+
 
 settings = Settings()

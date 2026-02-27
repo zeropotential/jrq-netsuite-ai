@@ -356,7 +356,7 @@ def chat(
     db: Session = Depends(get_db),
     openai_api_key: str | None = Header(default=None, alias="X-OpenAI-Api-Key"),
 ) -> ChatResponse:
-    logger.info(f"Chat request received: {payload.message[:100]}...")
+    logger.info("Chat request received (length=%d)", len(payload.message))
     
     prompt = payload.message.strip()
     if not prompt:
@@ -394,7 +394,7 @@ def chat(
             raise HTTPException(status_code=500, detail=f"OpenAI API error: {exc.message}") from exc
         except Exception as exc:
             logger.error(f"Unexpected error during intent classification: {exc}\n{traceback.format_exc()}")
-            raise HTTPException(status_code=500, detail=f"Error classifying intent: {type(exc).__name__}: {exc}") from exc
+            raise HTTPException(status_code=500, detail="Error classifying intent. Please try again.") from exc
         
         # Handle unsupported data requests
         if intent == "unsupported_data":
@@ -418,7 +418,7 @@ def chat(
                 return ChatResponse(answer=answer, source="assistant", sql=None)
             except Exception as exc:
                 logger.error(f"Error in general question: {exc}\n{traceback.format_exc()}")
-                raise HTTPException(status_code=500, detail=f"Error generating response: {type(exc).__name__}: {exc}") from exc
+                raise HTTPException(status_code=500, detail="Error generating response. Please try again.") from exc
         
         # Handle NetSuite help/consulting questions
         if intent == "netsuite_help":
@@ -427,7 +427,7 @@ def chat(
                 return ChatResponse(answer=answer, source="consultant", sql=None)
             except Exception as exc:
                 logger.error(f"Error in netsuite help: {exc}\n{traceback.format_exc()}")
-                raise HTTPException(status_code=500, detail=f"Error generating response: {type(exc).__name__}: {exc}") from exc
+                raise HTTPException(status_code=500, detail="Error generating response. Please try again.") from exc
 
         # For data queries, decide how results should be presented.
         display_mode = _classify_display_mode(client, prompt)
@@ -504,7 +504,7 @@ def chat(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             logger.error(f"Error generating SQL: {exc}\n{traceback.format_exc()}")
-            raise HTTPException(status_code=500, detail=f"Error generating SQL: {type(exc).__name__}: {exc}") from exc
+            raise HTTPException(status_code=500, detail="Error generating SQL. Please try again.") from exc
         normalized = sql.lower().lstrip()
 
     if not (normalized.startswith("select") or normalized.startswith("with")):
@@ -563,7 +563,7 @@ def chat(
                 )
             except Exception:
                 pass
-        raise HTTPException(status_code=400, detail=f"{exc} | SQL: {sql}") from exc
+        raise HTTPException(status_code=400, detail="Query execution failed. Check your request and try again.") from exc
     except ValueError as exc:
         logger.error(f"Query error: {exc}")
         # Record SQL validation error for learning
@@ -577,7 +577,7 @@ def chat(
                 )
             except Exception:
                 pass
-        raise HTTPException(status_code=400, detail=f"{exc} | SQL: {sql}") from exc
+        raise HTTPException(status_code=400, detail="Query validation failed. Check your request and try again.") from exc
     except Exception as exc:
         logger.error(f"Query execution error: {exc}\n{traceback.format_exc()}")
         # Record general execution error for learning (includes postgres errors)
@@ -594,7 +594,7 @@ def chat(
                 )
             except Exception:
                 pass
-        raise HTTPException(status_code=500, detail=f"Query failed: {type(exc).__name__}: {exc} | SQL: {sql}") from exc
+        raise HTTPException(status_code=500, detail="Query execution failed. Please try again.") from exc
 
     columns = result.get("columns", [])
     rows = result.get("rows", [])

@@ -1,10 +1,23 @@
 {$PUBLIC_HOST} {
     encode gzip
 
+    # Security headers
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+        X-XSS-Protection "1; mode=block"
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        -Server
+    }
+
     reverse_proxy api:8000 {
         transport http {
             read_timeout 10m
             write_timeout 10m
         }
+        # Do not forward the Host header to prevent host-header attacks
+        header_up X-Forwarded-Proto {scheme}
     }
 }

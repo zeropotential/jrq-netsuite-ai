@@ -1,0 +1,39 @@
+# Git & VCS
+.git
+.gitignore
+
+# Environment & secrets
+.env
+.env.*
+*.pem
+*.key
+
+# IDE & OS
+.vscode
+.idea
+__pycache__
+*.pyc
+*.pyo
+.DS_Store
+Thumbs.db
+
+# Data files that shouldn't be in the image
+*.csv
+*.xlsx
+*.xls
+
+# Documentation
+*.md
+LICENSE
+
+# Tests
+tests/
+pytest.ini
+.pytest_cache
+.coverage
+htmlcov/
+
+# Build artefacts
+dist/
+build/
+*.egg-info

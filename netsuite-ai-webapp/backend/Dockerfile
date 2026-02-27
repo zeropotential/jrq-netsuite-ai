@@ -17,6 +17,11 @@ COPY alembic.ini /app/alembic.ini
 COPY alembic /app/alembic
 COPY app /app/app
 
+# Run as non-root user for security
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -106,33 +106,37 @@ def _validate_sql(sql: str) -> None:
     Strict SQL validation to prevent dangerous operations.
     Only allows SELECT queries (including CTEs) on specific tables.
     """
-    sql_upper = sql.upper().strip()
+    # Strip SQL comments before validation to prevent bypass via /* */ or --
+    stripped = re.sub(r'/\*.*?\*/', ' ', sql, flags=re.DOTALL)  # block comments
+    stripped = re.sub(r'--[^\n]*', ' ', stripped)  # line comments
+    stripped = ' '.join(stripped.split())  # normalise whitespace
+
+    sql_upper = stripped.upper().strip()
     
     # Only allow SELECT or WITH (CTEs that resolve to SELECT)
     if not (sql_upper.startswith("SELECT") or sql_upper.startswith("WITH")):
         raise ValueError("Only SELECT queries are allowed")
     
+    # Block multi-statement (semicolons, even inside strings)
+    if ";" in stripped:
+        raise ValueError("Multi-statement queries are not allowed")
+
     # If it starts with WITH (CTE), ensure the final statement is SELECT
     if sql_upper.startswith("WITH"):
         # CTEs can be used with INSERT/UPDATE/DELETE, block those
-        # The final statement after all CTE definitions must be SELECT
-        # Find the main query - look for SELECT that's not inside a CTE definition
-        # A simple approach: ensure SELECT appears after the CTE block and no DML keywords
-        if re.search(r'\)\s*(INSERT|UPDATE|DELETE|MERGE)\s', sql_upper):
+        if re.search(r'\)\s*(INSERT|UPDATE|DELETE|MERGE|CREATE|DROP|ALTER|TRUNCATE)\s', sql_upper):
             raise ValueError("Only SELECT queries are allowed (no INSERT/UPDATE/DELETE with CTEs)")
-        # Also ensure there's a SELECT in the main query part
         if "SELECT" not in sql_upper:
             raise ValueError("CTE must contain a SELECT query")
     
     # Block dangerous keywords as whole words (comprehensive list)
-    # Use word boundary regex to avoid false positives like "create_date"
-    # Note: For CTEs, we check the context above, so these keywords in CTE subqueries are ok
     dangerous_words = [
         "DROP", "TRUNCATE", "ALTER", "CREATE", 
         "GRANT", "REVOKE", "EXEC", "EXECUTE", "CALL", "COPY", "LOAD",
+        "VACUUM", "REINDEX", "CLUSTER", "NOTIFY", "LISTEN", "UNLISTEN",
+        "SET", "RESET", "DISCARD", "REASSIGN", "SECURITY", "OWNER",
     ]
     for keyword in dangerous_words:
-        # Match keyword as a whole word (not part of column names like create_date)
         if re.search(rf'\b{keyword}\b', sql_upper):
             raise ValueError(f"Dangerous keyword not allowed: {keyword}")
     
@@ -143,21 +147,21 @@ def _validate_sql(sql: str) -> None:
             if re.search(rf'\b{keyword}\b', sql_upper):
                 raise ValueError(f"Dangerous keyword not allowed: {keyword}")
     
-    # Block dangerous patterns that don't need word boundaries
+    # Block dangerous patterns
     dangerous_patterns = [
         "INTO OUTFILE", "INTO DUMPFILE", "LOAD_FILE",
         "INFORMATION_SCHEMA", "PG_CATALOG", "PG_USER", "PG_SHADOW",
-        ";",  # No multi-statement
+        "PG_ROLES", "PG_AUTHID", "PG_STAT", "PG_SETTINGS",
+        "PG_TABLES", "PG_VIEWS", "PG_PROC",
+        "CURRENT_SETTING", "SET_CONFIG",
     ]
     for pattern in dangerous_patterns:
         if pattern in sql_upper:
             raise ValueError(f"Dangerous pattern not allowed: {pattern}")
     
     # Ensure only allowed tables are queried
-    # Extract table names from query (basic pattern matching)
-    # Match FROM/JOIN followed by table name
     table_pattern = r'\b(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)'
-    found_tables = re.findall(table_pattern, sql, re.IGNORECASE)
+    found_tables = re.findall(table_pattern, stripped, re.IGNORECASE)
     
     allowed = {"ns_account", "ns_transaction", "ns_transactionline", "ns_employee", "ns_customer",
                "account", "transaction", "transactionline", "employee", "customer"}
