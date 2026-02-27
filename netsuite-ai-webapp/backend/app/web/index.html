@@ -619,6 +619,11 @@
           <input id="loginOpenaiKey" type="password" placeholder="sk-..." autocomplete="off" />
           <span id="loginOpenaiError" class="field-error"></span>
         </label>
+        <label>
+          Admin API Key
+          <input id="loginAdminKey" type="password" placeholder="Admin key for data access" autocomplete="off" />
+          <span id="loginAdminError" class="field-error"></span>
+        </label>
         <div class="notice">Keys are used only in your browser session and sent to the API on each request.</div>
         <div class="login-actions">
           <button id="loginBtn">Continue</button>
@@ -845,6 +850,8 @@
       const kbStatus = document.getElementById("kbStatus");
       const loginConnectionError = document.getElementById("loginConnectionError");
       const loginOpenaiError = document.getElementById("loginOpenaiError");
+      const loginAdminKey = document.getElementById("loginAdminKey");
+      const loginAdminError = document.getElementById("loginAdminError");
       const connectionError = document.getElementById("connectionError");
       const openaiError = document.getElementById("openaiError");
       const connectionsView = document.getElementById("connectionsView");
@@ -862,6 +869,16 @@
       const postgresMirrorError = document.getElementById("postgresMirrorError");
 
       let currentExportMode = "none";
+      let adminApiKey = ""; // stored in memory only
+
+      // Helper: fetch with admin auth header
+      const adminFetch = (url, options = {}) => {
+        const headers = { ...(options.headers || {}) };
+        if (adminApiKey) {
+          headers["Authorization"] = `Bearer ${adminApiKey}`;
+        }
+        return fetch(url, { ...options, headers });
+      };
 
       const setExportOptions = (mode) => {
         currentExportMode = mode;
@@ -918,7 +935,7 @@
         refreshExplorerBtn.disabled = true;
         
         try {
-          const response = await fetch("/admin/data-explorer");
+          const response = await adminFetch("/admin/data-explorer");
           if (!response.ok) {
             throw new Error(`Failed to load data: ${response.status}`);
           }
@@ -1293,10 +1310,12 @@
         loginStatus.textContent = "";
         loginConnectionError.textContent = "";
         loginOpenaiError.textContent = "";
+        loginAdminError.textContent = "";
         connectionError.textContent = "";
         openaiError.textContent = "";
         loginConnectionId.classList.remove("input-error");
         loginOpenaiKey.classList.remove("input-error");
+        loginAdminKey.classList.remove("input-error");
         document.getElementById("connectionId").classList.remove("input-error");
         openaiKeyEl.classList.remove("input-error");
       };
@@ -1314,6 +1333,7 @@
         clearErrors();
         const connectionId = loginConnectionId.value.trim();
         const openaiKey = loginOpenaiKey.value.trim();
+        const adminKey = loginAdminKey.value.trim();
         let hasError = false;
         if (!connectionId) {
           loginConnectionError.textContent = "JDBC Connection ID is required.";
@@ -1333,12 +1353,18 @@
           loginOpenaiKey.classList.add("input-error");
           hasError = true;
         }
+        if (!adminKey) {
+          loginAdminError.textContent = "Admin API Key is required for data access.";
+          loginAdminKey.classList.add("input-error");
+          hasError = true;
+        }
         if (hasError) {
           loginStatus.textContent = "Please fix the highlighted fields.";
           return;
         }
         document.getElementById("connectionId").value = connectionId;
         openaiKeyEl.value = openaiKey;
+        adminApiKey = adminKey;
         // Show app, hide login
         loginScreen.classList.add("hidden");
         appEl.classList.remove("hidden");
@@ -1348,8 +1374,11 @@
       };
 
       loginBtn.addEventListener("click", applyLogin);
-      loginOpenaiKey.addEventListener("keydown", (e) => {
+      loginAdminKey.addEventListener("keydown", (e) => {
         if (e.key === "Enter") applyLogin();
+      });
+      loginOpenaiKey.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") loginAdminKey.focus();
       });
 
       // Clear chat button handler
