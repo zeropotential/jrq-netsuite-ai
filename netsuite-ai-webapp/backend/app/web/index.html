@@ -766,34 +766,6 @@
               <div id="openaiError" style="color: #b91c1c; font-size: 13px; margin-top: 10px; display: none;"></div>
             </div>
 
-            <!-- Schema Cache Card -->
-            <div class="kb-card" id="schemaCacheCard">
-              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-                <div class="status-indicator" id="schemaCacheIndicator" style="width: 12px; height: 12px; border-radius: 50%; background: #6b7280;"></div>
-                <strong style="font-size: 16px;">Schema Cache</strong>
-                <span id="schemaCacheBadge" class="status-badge" style="padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e2e8f0; color: #475569;">Checking...</span>
-              </div>
-              <div class="connection-details" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <div class="detail-item">
-                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Cached Tables</span>
-                  <div id="schemaCacheTableCount" style="font-size: 14px; margin-top: 4px;">—</div>
-                </div>
-                <div class="detail-item">
-                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Cache Age</span>
-                  <div id="schemaCacheAge" style="font-size: 14px; margin-top: 4px;">—</div>
-                </div>
-                <div class="detail-item">
-                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Expires In</span>
-                  <div id="schemaCacheExpires" style="font-size: 14px; margin-top: 4px;">—</div>
-                </div>
-                <div class="detail-item">
-                  <span style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Tables (sample)</span>
-                  <div id="schemaCacheTables" style="font-size: 12px; margin-top: 4px; color: var(--muted);">—</div>
-                </div>
-              </div>
-              <div id="schemaCacheError" style="color: #b91c1c; font-size: 13px; margin-top: 10px; display: none;"></div>
-            </div>
-
             <!-- PostgreSQL Mirror Card -->
             <div class="kb-card" id="postgresMirrorCard">
               <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
@@ -878,13 +850,6 @@
       const connectionsView = document.getElementById("connectionsView");
       const refreshConnectionsBtn = document.getElementById("refreshConnectionsBtn");
       const connectionsStatus = document.getElementById("connectionsStatus");
-      const schemaCacheIndicator = document.getElementById("schemaCacheIndicator");
-      const schemaCacheBadge = document.getElementById("schemaCacheBadge");
-      const schemaCacheTableCount = document.getElementById("schemaCacheTableCount");
-      const schemaCacheAge = document.getElementById("schemaCacheAge");
-      const schemaCacheExpires = document.getElementById("schemaCacheExpires");
-      const schemaCacheTables = document.getElementById("schemaCacheTables");
-      const schemaCacheError = document.getElementById("schemaCacheError");
       const postgresMirrorIndicator = document.getElementById("postgresMirrorIndicator");
       const postgresMirrorBadge = document.getElementById("postgresMirrorBadge");
       const postgresMirrorTotalRows = document.getElementById("postgresMirrorTotalRows");
@@ -1166,20 +1131,6 @@
         }
       };
 
-      const updateCacheUI = (cached) => {
-        if (cached) {
-          schemaCacheIndicator.style.background = "#22c55e";
-          schemaCacheBadge.style.background = "#dcfce7";
-          schemaCacheBadge.style.color = "#166534";
-          schemaCacheBadge.textContent = "Cached";
-        } else {
-          schemaCacheIndicator.style.background = "#6b7280";
-          schemaCacheBadge.style.background = "#e2e8f0";
-          schemaCacheBadge.style.color = "#475569";
-          schemaCacheBadge.textContent = "Not Cached";
-        }
-      };
-
       const updatePostgresMirrorUI = (status) => {
         if (status === "connected") {
           postgresMirrorIndicator.style.background = "#22c55e";
@@ -1230,16 +1181,9 @@
         updateStatusUI(openaiIndicator, openaiBadge, "checking");
         document.getElementById("jdbcError").style.display = "none";
         document.getElementById("openaiError").style.display = "none";
-        schemaCacheError.style.display = "none";
         postgresMirrorError.style.display = "none";
-        schemaCacheBadge.textContent = "Checking...";
-        schemaCacheIndicator.style.background = "#6b7280";
         postgresMirrorBadge.textContent = "Checking...";
         postgresMirrorIndicator.style.background = "#6b7280";
-        schemaCacheTableCount.textContent = "—";
-        schemaCacheAge.textContent = "—";
-        schemaCacheExpires.textContent = "—";
-        schemaCacheTables.textContent = "—";
         postgresMirrorTotalRows.textContent = "—";
         postgresMirrorTableCount.textContent = "—";
         postgresMirrorTablesList.innerHTML = "—";
@@ -1260,14 +1204,7 @@
               })
             : Promise.resolve(null);
 
-          const cachePromise = connectionId
-            ? fetch(`/admin/jdbc-connections/${connectionId}/schema-cache`)
-            : Promise.resolve(null);
-
-          const [healthResponse, cacheResponse] = await Promise.all([
-            healthPromise,
-            cachePromise,
-          ]);
+          const healthResponse = await healthPromise;
 
           if (healthResponse) {
             if (!healthResponse.ok) {
@@ -1337,34 +1274,13 @@
             updatePostgresMirrorUI("error");
           }
 
-          if (cacheResponse) {
-            if (cacheResponse.ok) {
-              const cacheData = await cacheResponse.json();
-              updateCacheUI(cacheData.cached);
-              schemaCacheTableCount.textContent = cacheData.table_count ?? 0;
-              schemaCacheAge.textContent = formatSeconds(cacheData.cache_age_seconds);
-              schemaCacheExpires.textContent = formatSeconds(cacheData.expires_in_seconds);
-              schemaCacheTables.textContent = cacheData.tables?.slice(0, 10).join(", ") || "—";
-            } else {
-              updateCacheUI(false);
-              const errData = await cacheResponse.json().catch(() => ({}));
-              schemaCacheError.textContent = errData.detail || `Cache status failed (${cacheResponse.status})`;
-              schemaCacheError.style.display = "block";
-            }
-          } else {
-            updateCacheUI(false);
-            schemaCacheError.textContent = "No connection ID configured. Log in to view cache status.";
-            schemaCacheError.style.display = "block";
-          }
-
           connectionsStatus.textContent = connectionId
             ? ""
-            : "No connection ID configured. Log in to view JDBC cache status.";
+            : "No connection ID configured.";
         } catch (err) {
           connectionsStatus.textContent = err.message;
           updateStatusUI(jdbcIndicator, jdbcBadge, "error");
           updateStatusUI(openaiIndicator, openaiBadge, "error");
-          updateCacheUI(false);
           updatePostgresMirrorUI("error");
         } finally {
           refreshConnectionsBtn.disabled = false;
