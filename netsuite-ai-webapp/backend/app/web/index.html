@@ -181,9 +181,6 @@
       }
       .chat-only .inputs,
       .chat-only #runReportBtn,
-      .chat-only #exportCsvBtn,
-      .chat-only #exportXlsxBtn,
-      .chat-only #exportPdfBtn,
       .chat-only .footer {
         display: none !important;
       }
@@ -890,6 +887,21 @@
       const explorerStatus = document.getElementById("explorerStatus");
       const refreshExplorerBtn = document.getElementById("refreshExplorerBtn");
       const postgresMirrorError = document.getElementById("postgresMirrorError");
+
+      let currentExportMode = "none";
+
+      const setExportOptions = (mode) => {
+        currentExportMode = mode;
+        const showCsv = mode === "dashboard" || mode === "table";
+        const showXlsx = mode === "dashboard" || mode === "table";
+        const showPdf = mode === "dashboard";
+
+        exportCsvBtn.classList.toggle("hidden", !showCsv);
+        exportXlsxBtn.classList.toggle("hidden", !showXlsx);
+        exportPdfBtn.classList.toggle("hidden", !showPdf);
+      };
+
+      setExportOptions("none");
 
       // Session-based chat history (clears on page refresh)
       let chatHistory = [];
@@ -2475,15 +2487,19 @@
           if (data.columns && data.rows && data.rows.length > 0) {
             const displayMode = (data.display_mode || "dashboard").toLowerCase();
             if (displayMode === "table") {
+              setExportOptions("table");
               await addMessageWithTable("Assistant", data.answer, sourceInfo, data.columns, data.rows, feedbackData);
             } else {
+              setExportOptions("dashboard");
               // Render client-side dashboard from query results
               await addMessageWithDashboard("Assistant", data.answer, sourceInfo, data.columns, data.rows, feedbackData);
             }
           } else if (data.html) {
+            setExportOptions("dashboard");
             // Legacy: Add message with LLM-generated visualization
             await addMessageWithVisualization("Assistant", data.answer, sourceInfo, data.html, feedbackData);
           } else {
+            setExportOptions("none");
             // Use typing effect for assistant responses (non-query results)
             await addMessageWithTyping("Assistant", data.answer, sourceInfo, feedbackData);
           }
@@ -2494,6 +2510,7 @@
           console.error("Chat error:", err);
           const errorMsg = err.message || "Unknown error occurred";
           statusEl.textContent = errorMsg;
+          setExportOptions("none");
           addMessage("Error", errorMsg, "Check browser console (F12) for details");
         } finally {
           sendBtn.disabled = false;
@@ -2580,9 +2597,11 @@
             throw new Error(data.detail || "Report failed");
           }
           renderReport(data.sql, data.columns || [], data.rows || []);
+          setExportOptions((data.rows || []).length > 0 ? "table" : "none");
           statusEl.textContent = "";
         } catch (err) {
           statusEl.textContent = err.message;
+          setExportOptions("none");
         }
       });
 
@@ -2591,6 +2610,14 @@
         if (!payload) return;
         if (!payload.connection_id) {
           statusEl.textContent = "Connection ID is required.";
+          return;
+        }
+        if (format === "pdf" && currentExportMode === "table") {
+          statusEl.textContent = "PDF export is only available for dashboard results.";
+          return;
+        }
+        if (currentExportMode === "none") {
+          statusEl.textContent = "Run a query first to export results.";
           return;
         }
 
