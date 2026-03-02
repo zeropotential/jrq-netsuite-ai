@@ -53,33 +53,49 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 class AdminAuthMiddleware(BaseHTTPMiddleware):
-    """Protect /admin/* endpoints with a bearer API key."""
+    """Protect /admin/* and /api/* endpoints with a bearer API key."""
+
+    # Paths that do NOT require authentication
+    PUBLIC_PATHS: set[str] = {
+        "/",
+        "/healthz",
+        "/readyz",
+    }
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path.startswith("/admin"):
-            # Always require an admin key in non-dev environments
-            expected = settings.admin_api_key
-            if not expected:
-                if settings.app_env != "dev":
-                    return JSONResponse(
-                        {"detail": "Admin endpoints are disabled (ADMIN_API_KEY not set)"},
-                        status_code=503,
-                    )
-                # In dev mode, allow unauthenticated access if no key is set
-                return await call_next(request)
+        path = request.url.path
 
-            auth = request.headers.get("Authorization", "")
-            if not auth.startswith("Bearer "):
+        # Allow public paths (index page, health checks)
+        if path in self.PUBLIC_PATHS:
+            return await call_next(request)
+
+        # Only protect /admin/* and /api/* paths
+        if not (path.startswith("/admin") or path.startswith("/api")):
+            return await call_next(request)
+
+        # Require admin key
+        expected = settings.admin_api_key
+        if not expected:
+            if settings.app_env != "dev":
                 return JSONResponse(
-                    {"detail": "Missing Authorization header"},
-                    status_code=401,
+                    {"detail": "API access is disabled (ADMIN_API_KEY not set)"},
+                    status_code=503,
                 )
-            token = auth.removeprefix("Bearer ").strip()
-            if not hmac.compare_digest(token, expected):
-                return JSONResponse(
-                    {"detail": "Invalid admin API key"},
-                    status_code=403,
-                )
+            # In dev mode, allow unauthenticated access if no key is set
+            return await call_next(request)
+
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return JSONResponse(
+                {"detail": "Missing Authorization header"},
+                status_code=401,
+            )
+        token = auth.removeprefix("Bearer ").strip()
+        if not hmac.compare_digest(token, expected):
+            return JSONResponse(
+                {"detail": "Invalid API key"},
+                status_code=403,
+            )
         return await call_next(request)
 
 

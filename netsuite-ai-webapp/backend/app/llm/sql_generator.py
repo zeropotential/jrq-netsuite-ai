@@ -113,20 +113,20 @@ def _is_gpt5_model() -> bool:
     return "gpt-5" in model or "o1" in model or "o3" in model
 
 
-def _get_completion_kwargs(max_tokens: int, temperature: float | None = None) -> dict:
+def _get_completion_kwargs(max_tokens: int | None = None, temperature: float | None = None) -> dict:
     """Return the appropriate parameters based on model.
     
     GPT-5 series:
-    - Uses max_completion_tokens instead of max_tokens
     - Only supports temperature=1 (default), so we omit it
+    - No token limit imposed (let model use as many tokens as needed)
     """
     kwargs = {}
     
     if _is_gpt5_model():
-        kwargs["max_completion_tokens"] = max_tokens
         # GPT-5 doesn't support custom temperature, omit it (defaults to 1)
+        # No max_completion_tokens — let the model use unlimited tokens
+        pass
     else:
-        kwargs["max_tokens"] = max_tokens
         if temperature is not None:
             kwargs["temperature"] = temperature
     

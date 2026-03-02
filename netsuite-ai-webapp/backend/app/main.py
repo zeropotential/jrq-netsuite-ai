@@ -39,7 +39,7 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestIdMiddleware)
     # 2. Security response headers
     app.add_middleware(SecurityHeadersMiddleware)
-    # 3. Admin endpoint authentication
+    # 3. API & Admin endpoint authentication
     app.add_middleware(AdminAuthMiddleware)
     # 4. Rate limiting
     app.add_middleware(RateLimitMiddleware)

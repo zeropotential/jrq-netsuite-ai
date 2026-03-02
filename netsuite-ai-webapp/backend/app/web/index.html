@@ -1212,6 +1212,9 @@
           if (apiKey) {
             headers["X-OpenAI-Api-Key"] = apiKey;
           }
+          if (adminApiKey) {
+            headers["Authorization"] = `Bearer ${adminApiKey}`;
+          }
 
           const healthPromise = connectionId
             ? fetch("/api/connections/health", {
@@ -2041,7 +2044,10 @@
         try {
           const response = await fetch("/api/feedback", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(adminApiKey ? { "Authorization": `Bearer ${adminApiKey}` } : {}),
+            },
             body: JSON.stringify({
               query_memory_id: data.query_memory_id,
               user_message: data.user_message,
@@ -2363,6 +2369,9 @@
         const key = openaiKeyEl.value.trim();
         if (key) {
           headers["X-OpenAI-Api-Key"] = key;
+        }
+        if (adminApiKey) {
+          headers["Authorization"] = `Bearer ${adminApiKey}`;
         }
         return headers;
       };
